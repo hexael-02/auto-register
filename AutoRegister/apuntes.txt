@@ -1,0 +1,73 @@
+quiero que me ayudes a crear una aplicacion que calcule, analice y muestre datos al usuarios, quiero que los estudiantes puedan ver sus calificaciones de dos formas: 1. que puedan ver su calificacion de la forma tradicional estadounidense (A+, A, A-, B+,B,B-,C+,C,C-, etc....) 2. en caso de que pida ver su calificacion a detalle, alla un boton detalles para que pueda ver cual fue su calificacion en cada campo. quiero que cuando el profesor llene los campos correspondientes a la calificacion, el programa sume la calificación puesta en los campos y calcule el promedio de el resultado de esa calificacion para luego publicarla en el "p1, p2, p3 o p4" el programa debe mostrar cuanto dura cada periodo y debe guardar la calificacion de cada periodo en 5 constantes (p1,p2,p3,p4 y promedio_general) para que la calificacion no pueda ser manipulada, si se necesita manipular la calificacion por un motivo x debe hacerlo el usuario que tenga el permiso
+el programa debe guardar los datos de las calificacion tanto los campos para la calificacion de su periodo, como la calificacion de el periodo (p1,p2,p3,p4) en una base de datos, el programa debe tener una parte de texto para que el profesor escriba el metodo de enseñanza en ese periodo y como fueron aplicados los conocimientos, este campo debe ser obligatorio (se puede modificar luego de su publicación) y si el profesor no publica la calificacion de ese periodo el programa no podra pasar al siguiente periodo y esto mandara una alerta cada vez que el profesor y a el cuerpo administrativo (incluye a la directora) entre al programa y ademas quiero que los estudiantes puedan apelar a una mejor calificacion antes de la publicacion
+
+nota: el programa debe seguir las reglas y especificaciones del ministerio de eduacion dominicano para la calificacion de los periodos y para saber cuanto dura cada periodo
+
+jerarquia para usuarios en base a sus id:
+1.quiero que los estudiantes puedan ver sus calificaciones 
+2.quiero que el profesor solo puedan llenar y editar los campos correspondientes a la calificacion, una vez publicadas en su periodo correspondiente (p1, p2, p3 o p4) no pueda ser manipulada, por defecto podran ver la calificacion antes y despues de su publicacion.
+3.quiero que el cuerpo admnistrativo de la escuela (coordinadora nivel primario y/o secundario, secretaria ) puedan administrar los usuarios comunes (profesores y estudiantes) y puedan ver las calificacion antes y despues de su publicacion. No pueden llenar los campos para calificacion ya que este permiso es exclusivos de los profesores y directora_centro_educativo
+4.quiero que el director del centro educativo, tenga todos los permisos, pero que ademas tenga tres permisos exclusivos, el primero es que sea el unico que pueda modificar calificacion una vez publicada, si ya paso 7 dias desde su publicacion no pueda ser modificada por NADIE, el segundo seria que solo el tenga permiso para expulsar usuarios o suspender usuarios y el tercero es que solo ella pueda anular las alertas que mande el programa con respecto a campos sin llenar o periodos incompletos. 
+5. quiero que la encarga de registro tambien puede manipular la calificacion del estudiante una vez publicadas y puede ver las calificaciones antes y despues de su calificacion
+
+nota: director_centro que deben tener la jerarquia mas alta del programa y la administracion del centro educativo solo debe tener los permisos correspondientes a su función dentro del centro 
+
+la jerarquia se divide en 4 grupos:
+
+director (tiene todos los permisios)
+encargada de registro (permiso acorde a su funcion)
+administracion (permiso acorde a su funcion)
+profesores (permiso acorde a su funcion)
+estudiante (permiso acorde a su funcion)
+
+
+
+quiero que el programa se realice en 4 bases: funciones, estructuras de control, bucles y control de errores
+
+
+
+utiliza esta parte del codigo como tu guia para los nombres de variables, y todo lo que necesites aplicarla:
+
+
+import pandas
+
+import csv
+
+import os
+
+from datetime import date, datetime
+
+
+
+ARCHIVO_CSV = "AutoRegister.csv"
+
+
+
+ESTUDIANTES_DATOS = [
+
+'estudiante_ID','estudiante_nombre', 'estudiante_apellido', 'estudiante_RNE', 'estudiante_edad', 'estudiante_grado', 'estudiante_centro_educativo', 'estudiante_horario'
+
+]
+
+PROFESOR_DATOS = [
+
+'profesor_ID', 'profesor_nombre', 'profesor_apellido', 'profesor_cedula', 'profesor_materia'
+
+]
+
+CALIFICACION = [
+
+'Participacion', 'Cuaderno', 'Practica', 'Exposicion', 'prueba_mensual', 'asistencia'
+
+]
+
+
+promedio = ()
+
+nota: quiero que me hagas sugerencias para mejorar mi la bese, que agregues o modifiques las listas para que la programacion se mas eficiente
+
+nota: quiero que el Código se eficiente, limpio y corto (busca una forma de que el programa corra con las especificacion establecidas pero utilizando la menor cantidad de lineas de codigo posible) 
+
+nota: con respecto a la base de datos, por ahora solo preocupate por generar codigo del programa y que corra, pero como ya sabes que va correr con su base datos dejale el camino preparado a la base de datos "yo te indicare cuando aplicaremos la base de datos" 
+
+no tires el codigo hasta que dialoguemos tus sugerencias 

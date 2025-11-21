@@ -1,0 +1,119 @@
+import pandas as pd
+import csv
+import os
+from datetime import date, datetime, timedelta # Importamos timedelta para el límite de 7 días
+from typing import Dict, Any, List
+
+# --- 1. DEFINICIÓN DE CONSTANTES (Nuestras "Tablas" Inmutables) ---
+
+# ROL Y PERMISOS (Jerarquía)
+ROLES_PERMISOS = {
+    'ESTUDIANTE': {'ver_notas': True, 'llenar_campos': False, 'publicar_nota': False, 'editar_7dias': False, 'modificar_final': False, 'admin_usuarios': False, 'anular_alertas': False},
+    'PROFESOR': {'ver_notas': True, 'llenar_campos': True, 'publicar_nota': True, 'editar_7dias': False, 'modificar_final': False, 'admin_usuarios': False, 'anular_alertas': False},
+    'ADMINISTRACION': {'ver_notas': True, 'llenar_campos': False, 'publicar_nota': False, 'editar_7dias': False, 'modificar_final': False, 'admin_usuarios': True, 'anular_alertas': False},
+    'ENCARGADA_REGISTRO': {'ver_notas': True, 'llenar_campos': False, 'publicar_nota': False, 'editar_7dias': True, 'modificar_final': True, 'admin_usuarios': False, 'anular_alertas': False}, # Le damos permiso de modificar la nota final (modificar_final)
+    
+	'DIRECTOR': {'ver_notas': True, 'llenar_campos': True, 'publicar_nota': True, 'editar_7dias': True, 'modificar_final': True, 'admin_usuarios': True, 'anular_alertas': True},
+}
+
+# ESCALA DE CALIFICACIONES (MINERD/USA)
+ESCALA_LETRAS = {
+    (97, 100): "A+", (93, 96): "A", (90, 92): "A-",
+    (87, 89): "B+", (83, 86): "B", (80, 82): "B-",
+    (77, 79): "C+", (73, 76): "C", (70, 72): "C-",
+    (67, 69): "D+", (63, 66): "D", (60, 62): "D-",
+    (0, 59): "F",
+}
+
+# --- 2. BASE DE DATOS SIMULADA (Uso de listas/diccionarios en memoria) ---
+
+# ⚠️ NOTA: Usamos esta estructura simple en memoria hasta que implementemos la base de datos real.
+USUARIOS_SIMULADOS = [
+    {'usuario_ID': 1001, 'usuario_nombre': 'Ana', 'usuario_apellido': 'Bermudez', 'usuario_rol': 'ESTUDIANTE'},
+    {'usuario_ID': 2005, 'usuario_nombre': 'Pedro', 'usuario_apellido': 'Gomez', 'usuario_rol': 'PROFESOR'},
+    {'usuario_ID': 3001, 'usuario_nombre': 'Carmen', 'usuario_apellido': 'Duarte', 'usuario_rol': 'DIRECTOR'},
+    {'usuario_ID': 4002, 'usuario_nombre': 'Raquel', 'usuario_apellido': 'Perez', 'usuario_rol': 'ADMINISTRACION'},
+    {'usuario_ID': 5003, 'usuario_nombre': 'Jose', 'usuario_apellido': 'Martinez', 'usuario_rol': 'ENCARGADA_REGISTRO'},
+]
+
+
+# ------------------------------------------------------------------------
+# F U N C I O N E S
+# ------------------------------------------------------------------------
+
+def gestionar_permisos(user_id: int) -> Dict[str, Any]:
+    """
+    Busca al usuario por ID, verifica su rol y retorna un diccionario
+    con los datos del usuario y sus permisos asociados.
+    """
+    
+    # BUCLE: Itera sobre la lista de usuarios simulados
+    try:
+        usuario_encontrado = None
+        for usuario in USUARIOS_SIMULADOS:
+            if usuario['usuario_ID'] == user_id:
+                usuario_encontrado = usuario
+                break
+        
+        # ESTRUCTURA DE CONTROL: Verifica si el usuario existe
+        if usuario_encontrado:
+            rol = usuario_encontrado['usuario_rol']
+            
+            # ESTRUCTURA DE CONTROL: Verifica si el rol existe en la tabla de permisos
+            if rol in ROLES_PERMISOS:
+                permisos = ROLES_PERMISOS[rol]
+                
+                # Combina los datos del usuario y sus permisos en un solo diccionario
+                resultado = {
+                    'autenticado': True,
+                    'datos': usuario_encontrado,
+                    'permisos': permisos
+                }
+                return resultado
+            else:
+                return {'autenticado': False, 'mensaje': f"Error: Rol '{rol}' no definido en el sistema de permisos."}
+        else:
+            return {'autenticado': False, 'mensaje': "Error: Usuario no encontrado."}
+            
+    # CONTROL DE ERRORES: Captura cualquier error inesperado (ej. KeyError, TypeError)
+    except Exception as e:
+        return {'autenticado': False, 'mensaje': f"Error interno al gestionar permisos: {e}"}
+
+# --- PRUEBA (Opcional, no parte de la función final) ---
+# director_permisos = gestionar_permisos(3001)
+# print(director_permisos)
+# estudiante_permisos = gestionar_permisos(1001)
+# print(estudiante_permisos)
+# error_permisos = gestionar_permisos(9999)
+# print(error_permisos)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
