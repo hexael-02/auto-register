@@ -3,6 +3,7 @@ import csv
 import os
 from datetime import date, datetime, timedelta # Importamos timedelta para el límite de 7 días
 from typing import Dict, Any, List
+import uuid
 
 # --- 1. DEFINICIÓN DE CONSTANTES (Nuestras "Tablas" Inmutables) ---
 
@@ -46,6 +47,7 @@ USUARIOS_SIMULADOS = [
     {'usuario_ID': 5003, 'usuario_nombre': 'Jose', 'usuario_apellido': 'Martinez', 'usuario_rol': 'ENCARGADA_REGISTRO'},
 ]
 
+REGISTROS_CALIFICACION_SIMULADOS List [Dict[ str, Any]] = []
 
 # ------------------------------------------------------------------------
 # F U N C I O N E S
@@ -166,7 +168,100 @@ def calcular_calificacion_periodo(campos_detallados: Dict[str, float]) -> Dict[s
     except Exception as e:
          return {'error': True, 'mensaje': f"Error inesperado al calcular la calificación: {e}"}
 
+#crear y actualizar registro
 
+def crear_o_actualizar_registro(
+    profesor_id: int, 
+    estudiante_id: int, 
+    materia: str, 
+    periodo_num: int, 
+    campos: Dict[str, float],
+    metodologia: str
+) -> Dict[str, Any]:
+    """
+    Bloque 3: Simula la inserción o actualización de un registro de calificación
+    en la base de datos, aplicando todas las reglas de negocio (permisos, publicación, fechas).
+    """
+    # 1. VERIFICACIÓN DE PERMISOS
+    permisos_data = gestionar_permisos(profesor_id)
+    # ESTRUCTURA DE CONTROL: Verifica si el profesor está autenticado y tiene permiso para llenar campos
+    if not permisos_data['autenticado'] or not permisos_data['permisos'].get('llenar_campos'):
+        return {'exito': False, 'mensaje': 'Permiso denegado: El usuario no puede llenar campos de calificación.'}
+        
+    # 2. CÁLCULO DE LA NOTA
+    # CONTROL DE ERRORES: Intenta calcular la nota para evitar guardar datos incorrectos
+    calculo_resultado = calcular_calificacion_periodo(campos)
+
+    if calculo_resultado['error']:
+        return {'exito': False, 'mensaje': f"Fallo en el cálculo: {calculo_resultado['mensaje']}"}
+
+    nota_numerica = calculo_resultado['calificacion_numerica']
+    nota_letras = calculo_resultado['calificacion_letras']
+
+    # 3. BÚSQUEDA DEL REGISTRO EXISTENTE
+    registro_existente = None
+    indice_registro = -1
+    
+    # BUCLE: Busca si ya existe un registro para este Estudiante-Materia-Período
+    for i, registro in enumerate(REGISTROS_CALIFICACION_SIMULADOS):
+        if (registro['estudiante_ID'] == estudiante_id and 
+            registro['materia'] == materia and 
+            registro['periodo_numero'] == periodo_num):
+            registro_existente = registro
+            indice_registro = i
+            break
+            
+    # 4. APLICACIÓN DE REGLAS DE EDICIÓN
+    
+    # ESTRUCTURA DE CONTROL: Regla de inmutabilidad/publicación
+    if registro_existente and registro_existente['publicado']:
+        
+        fecha_limite_str = registro_existente.get('fecha_limite_modificacion')
+        fecha_limite = datetime.strptime(fecha_limite_str, '%Y-%m-%d').date()
+        fecha_actual = date.today()
+        
+        # ESTRUCTURA DE CONTROL: Verifica si se excedió el límite de 7 días
+        if fecha_actual > fecha_limite:
+            # ESTRUCTURA DE CONTROL: Solo el Director o Encargada de Registro puede modificar después del límite
+            if not (permisos_data['permisos'].get('modificar_final') or permisos_data['permisos'].get('editar_7dias')):
+                 return {'exito': False, 'mensaje': 'Edición Bloqueada: El registro está publicado y ha excedido la fecha límite de modificación.'}
+        
+    # 5. CREACIÓN O ACTUALIZACIÓN DEL DOCUMENTO
+    fecha_publicacion = date.today().strftime('%Y-%m-%d')
+    fecha_limite_modificacion = (date.today() + timedelta(days=7)).strftime('%Y-%m-%d')
+    
+    # Estructura del nuevo/actualizado registro (basado en el modelo REGISTRO_CALIFICACION)
+    nuevo_registro = {
+        'estudiante_ID': estudiante_id,
+        'profesor_ID': profesor_id,
+        'materia': materia,
+        'periodo_numero': periodo_num,
+        
+        'campos_detallados': campos,
+        'calificacion_numerica': nota_numerica,
+        'calificacion_letras': nota_letras,
+        'promedio_general': None, # Se llena al final del año
+        
+        'metodologia_docente': metodologia,
+        'fecha_publicacion': fecha_publicacion,
+        'publicado': False, # Siempre se crea/edita como NO publicado por defecto
+        'alerta_activa': True, # Se asume activo hasta que el profesor PUBLIQUE
+        'fecha_limite_modificacion': fecha_limite_modificacion,
+        'apelaciones_activas': []
+    }
+
+    # ESTRUCTURA DE CONTROL: Determina si es una creación o una actualización
+    if registro_existente:
+        # Actualización
+        REGISTROS_CALIFICACION_SIMULADOS[indice_registro].update(nuevo_registro)
+        # Mantener el ID original si es una actualización
+        REGISTROS_CALIFICACION_SIMULADOS[indice_registro]['registro_ID'] = registro_existente['registro_ID'] 
+        return {'exito': True, 'mensaje': f'Registro {registro_existente["registro_ID"]} actualizado exitosamente.'}
+    else:
+        # Creación (genera un nuevo ID)
+        nuevo_registro['registro_ID'] = str(uuid.uuid4()) # ID único y corto
+        REGISTROS_CALIFICACION_SIMULADOS.append(nuevo_registro)
+        return {'exito': True, 'mensaje': f'Nuevo registro {nuevo_registro["registro_ID"]} creado exitosamente.'}
 
 
 

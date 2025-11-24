@@ -3,6 +3,7 @@ import csv
 import os
 from datetime import date, datetime, timedelta
 from typing import Dict, List
+import uuid
 
 #rol y permisos
 #para admistracion anurlar alertas debe ser true
@@ -36,6 +37,8 @@ ESCALA_LETRA = {
     (67, 69): "D+", (63,66): "D", (60,62): "D-",
     (0, 59): "F+"
 }
+
+REGISTROS_CALIFICACION_SIMULADOS: list[dict[str, Any ]] = []
 
 #NOTA: Usamos esta estructura simple en memoria hasta que implementemos la base de datos real
 
@@ -123,5 +126,74 @@ def calcular_calificacion_periodo(campo_detallado: dict[str, float]) -> dict [st
     except Exception as e:
         return {'error': True, 'mensaje':f"error inesperado al calcular la califciacion: {e}"}
     
+def crear_o_actualizar_registro(
+        profesor_id: int,
+        estudiante_id: int,
+        materia: str,
+        periodo_num: int,
+        campos: dict[str, float],
+        metodologia: str
+) -> dict[str,any]:
+    permisos_data = gestionar_permisos*(profesor_id)
+    if not permisos_data['autenticado'] or not permisos_data['permisos'].get('llenar_campos'):
+        return {'exito': False, 'mensaje': "permiso denegado: el usuario no puede llenar campos de calificacion."}
+    calculo_resultado = calcular_calificacion_periodo(campos)
 
+    if calculo_resultado['error']:
+        return{'exito': False, 'mensaje': f"fallo en el calculo: {calculo_resultado['mensaje']}"}
+    
+    nota_numerica = calculo_resultado['calificacion_numerica']
+    nota_letra = calculo_resultado['calificacion_letras']
+
+    registro_existente = None
+    indice_registro = -1
+    
+    for i, registro in enumerate(REGISTROS_CALIFICACION_SIMULADOS):
+        if (registro['estudiante_id'] == estudiante_id and registro['materia'] == materia and registro['periodo_numero'] == periodo_num):
+            registro_existente = registro
+            indice_registro = i 
+            break 
+        
+        
+        if registro_existente and registro_existente['publicado']:
+            
+            fecha_limite_str = registro_existente.get('fecha_limite_modificacion')
+            fecha_limite = datetime.strptime(fecha_limite_str, '%Y-%m-%d').date()
+            fecha_actual = date.today()
+            
+            if fecha_actual > fecha_limite:
+                if not (permisos_data['permisos'].get('modificar_final') or permisos_data['permisos'].get('editar_7dias')):
+                    return{'exito': False, 'mensaje': 'edicion bloqueada: el registro esta publicado y ha excedido la fecha limite de modificacion.'}
+                fecha_publicacion = date.today().strftime('%Y-%m-%d')
+                fecha_limite_modificacion = (date.today() + timedelta(days=7)).strtime('%Y-%m-%d')
+                
+                nuevo_registro = {
+                    'estudiante_ID': estudiante_id,
+                    'profesor_ID': profesor_id,
+                    'materia': materia,
+                    'periodo_numero': periodo_num,
+
+                    'campos_detallados': campos,
+                    'calificacion_numerica': nota_numerica,
+                    'calificacion_letra': nota_letra,
+                    'promedio_general': None,
+
+                    'metodologia_docente': metodologia,
+                    'fecha_publicacion': fecha_publicacion,
+                    'publicado':False,
+                    'alerta_activa': True,
+                    'fecha_limite_modificacion': fecha_limite_modificacion,
+                    'apelaciones_activas': []
+                }
+
+                if registro_existente:
+                    REGISTROS_CALIFICACION_SIMULADOS[indice_registro].update(nuevo_registro)
+
+                    REGISTROS_CALIFICACION_SIMULADOS[indice_registro]['registro_ID'] = registro_existente ['registro_ID']
+                    return {'exito': True, 'mensaje': f"registro{registro_existente['registro_ID']} actualizado exitosamente. "}
+                else:
+                    nuevo_registro['registro_ID'] = str(uuid.uuid4())
+                    REGISTROS_CALIFICACION_SIMULADOS.append(nuevo_registro)
+                    return {'exito': True, 'mensaje': f"nuevo registro{nuevo_registro['registro_ID']} creado exitosamente"}
+                
 
