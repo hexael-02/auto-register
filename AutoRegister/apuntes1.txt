@@ -16,6 +16,16 @@ ROLES_PERMISOS = {
 	'DIRECTOR': {'ver_notas': True, 'llenar_campos': True, 'publicar_nota': True, 'editar_7dias': True, 'modificar_final': True, 'admin_usuarios': True, 'anular_alertas': True},
 }
 
+
+# PESOS DE CALIFICACIÓN (DEBE SUMAR 100)
+PESOS_CALIFICACION = {
+    'participacion': 20,    # Ponderación del 20%
+    'cuaderno': 15,         # Ponderación del 15%
+    'practica': 20,         # Ponderación del 20%
+    'exposicion': 20,       # Ponderación del 20%
+    'prueba_mensual': 25    # Ponderación del 25%
+
+
 # ESCALA DE CALIFICACIONES (MINERD/USA)
 ESCALA_LETRAS = {
     (97, 100): "A+", (93, 96): "A", (90, 92): "A-",
@@ -89,6 +99,72 @@ def gestionar_permisos(user_id: int) -> Dict[str, Any]:
 
 
 
+}
+
+
+def obtener_calificacion_letras(nota_numerica: float) -> str:
+    """
+    Convierte una nota numérica (0-100) a la escala de letras MINERD/USA.
+    Utiliza la constante ESCALA_LETRAS.
+    """
+    # BUCLE: Itera sobre los rangos de la ESCALA_LETRAS
+    for (min_nota, max_nota), letra in ESCALA_LETRAS.items():
+        # ESTRUCTURA DE CONTROL: Verifica si la nota cae dentro del rango
+        if min_nota <= nota_numerica <= max_nota:
+            return letra
+    
+    # ESTRUCTURA DE CONTROL: Caso de error (nunca debería ocurrir si ESCALA_LETRAS cubre 0-100)
+    return "N/A"
+
+def calcular_calificacion_periodo(campos_detallados: Dict[str, float]) -> Dict[str, Any]:
+    """
+    Suma las calificaciones de los campos detallados, calcula el promedio ponderado (0-100),
+    y lo convierte a la escala de letras.
+    """
+    nota_final_numerica = 0
+    
+    # CONTROL DE ERRORES: Asegura que el diccionario de pesos exista
+    if not PESOS_CALIFICACION:
+         return {'error': True, 'mensaje': "Error: La constante PESOS_CALIFICACION no está definida."}
+
+    # BUCLE: Itera sobre los campos detallados para calcular la nota ponderada
+    try:
+        for campo, puntuacion_obtenida in campos_detallados.items():
+            peso_campo = PESOS_CALIFICACION.get(campo)
+            
+            # ESTRUCTURA DE CONTROL: Verifica que el campo de calificación tenga un peso definido
+            if peso_campo is None:
+                raise ValueError(f"Campo '{campo}' no tiene un peso definido en PESOS_CALIFICACION.")
+            
+            # Cálculo Ponderado: (Puntuación obtenida / 100) * Peso
+            # Asumimos que la puntuación de cada campo es sobre 100 (o su equivalente),
+            # pero aquí calcularemos la contribución directa a la nota final (que es sobre 100).
+            # Para la simplicidad del cálculo, asumiremos que los 'campos_detallados'
+            # ya contienen el puntaje que contribuye directamente al 100% final.
+            # *Nota*: Se deben asegurar que los campos que llena el profesor sumen 100.
+            
+            nota_final_numerica += puntuacion_obtenida
+        
+        # Redondear el resultado a dos decimales
+        nota_final_numerica = round(nota_final_numerica, 2)
+        
+        # ESTRUCTURA DE CONTROL: Limitar la nota a 100
+        if nota_final_numerica > 100:
+             nota_final_numerica = 100.0
+
+        nota_final_letras = obtener_calificacion_letras(nota_final_numerica)
+        
+        return {
+            'error': False,
+            'calificacion_numerica': nota_final_numerica,
+            'calificacion_letras': nota_final_letras
+        }
+    
+    # CONTROL DE ERRORES: Captura errores durante el cálculo (ej. si la puntuación no es un número)
+    except (ValueError, TypeError) as e:
+        return {'error': True, 'mensaje': f"Error de cálculo. Verifique los tipos de datos: {e}"}
+    except Exception as e:
+         return {'error': True, 'mensaje': f"Error inesperado al calcular la calificación: {e}"}
 
 
 

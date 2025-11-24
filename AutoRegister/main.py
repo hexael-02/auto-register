@@ -20,6 +20,14 @@ ROLES_PERMISOS = {
     'DIRECTOR': {'ver_notas': True, 'llenar_campos': True, 'publicar_notas': True, 'editar_7dias': True, 'modificar_final': True, 'admin_usuarios': True, 'anular_alertas': True},
 }
 
+#PESOS DE CALIFICACION (DEBE SUMAR 100)
+PESOS_CALIFICACION = {
+    'participacion': 20,
+    'cuaderno': 15,
+    'practica': 20,
+    'exposicion':20,
+    'prueba_mensual':25
+}
 
 ESCALA_LETRA = {
     (97, 100): "A+", (93,96): "A", (90,92): "A-",
@@ -76,3 +84,44 @@ def gestionar_permisos(user_id: int) -> dict[str, list[Any]]:
 #print(estudiantes_permisos)
 #error_permisos = gestionar_permisos(9999)
 #print(error_permisos)
+
+def obtener_calificacion_letas(notas_numericas: float) -> str:
+    for (min_nota, max_nota),  letra in ESCALA_LETRA.items():
+        if min_nota <= notas_numericas <= max_nota:
+            return letra
+    return "N/A"
+
+def calcular_calificacion_periodo(campo_detallado: dict[str, float]) -> dict [str, Any]:
+
+    nota_final_numerica = 0 
+
+    if not PESOS_CALIFICACION:
+        return {'error': True, 'mensaje': "error: la constante PESOS_CALIFICACION no esta definida"}
+    
+    try:
+        for campo, puntuacion_obtenida in campo_detallado.items():
+            peso_campo = PESOS_CALIFICACION.get(campo)
+
+            if peso_campo is None:
+                raise ValueError(f" el campo '{campo}' no tiene un peso definido en PESOS_CALIFICACION. ")
+            nota_final_numerica += puntuacion_obtenida
+            
+            nota_final_numerica = round (nota_final_numerica, 2)
+
+            if nota_final_numerica > 100:
+                nota_final_numerica = 100.0
+            
+            nota_final_letras = obtener_calificacion_letas(nota_final_numerica)
+
+            return {
+                'error': False,
+                'calificacion_numerica': nota_final_numerica,
+                'calificacion_letras': nota_final_letras
+            }
+    except (ValueError, TypeError) as e:
+        return {'error': True, 'mensaje': f"error de calculo. verifique los tipos de datos: {e}" }
+    except Exception as e:
+        return {'error': True, 'mensaje':f"error inesperado al calcular la califciacion: {e}"}
+    
+
+
