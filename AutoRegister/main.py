@@ -447,3 +447,146 @@ print(apelacion_fallida_rol) # Debe fallar con "Permiso denegado: Solo los estud
 """
 
 # bloque 6
+
+def gestionar_apelacion_admin(user_id_admin: int, registro_id: str, apelacion_id: str, nuevo_estado: str, respuesta_admin: str) -> Dict[str, Any]:
+    
+    permisos_data = gestionar_permisos(user_id_admin)
+    permisos_gestion = permisos_data['permisos'].get('admin_usuarios') or permisos_data ['permisos'].get('modificar_final') 
+
+    if not permisos_data['autenticado'] or not permisos_gestion:
+        return{'EXITO': False, 'mensjae': "permiso denegado: solo roles administrativos pueden gestionar apelaciones." }
+    
+    registro_encontrado = None
+    indice_registro = -1
+
+    for i, registro in enumerate(REGISTROS_CALIFICACION_SIMULADOS):
+        if registro['registro_ID'] == registro_id:
+            registro_encontrado =  registro
+            indice_registro = i 
+            break
+
+    if not registro_encontrado:
+        return {'exito': False, 'mensaje': "error: el registro de calificacion no se encuentra. " }
+    
+    apelacion_encontrada = None
+    indice_apelacion = -1
+
+    for j, apelacion in enumerate(registro_encontrado.get('apelaciones_activas', [])):
+        if apelacion['apelacion_id'] == apelacion_id:
+            apelacion_encontrada = apelacion
+            indice_apelacion = j
+            break
+    if not apelacion_encontrada:
+        return {'exito': False, 'mensaje': "error: debe elegir una de las opciones que mostradas en pantalla (aceptada o rechazada)"}
+    
+    try:
+        REGISTROS_CALIFICACION_SIMULADOS['indice_registro']['apelaciones_activas']['indice_apelacion']['estado'] = nuevo_estado
+        REGISTROS_CALIFICACION_SIMULADOS['indice_registro']['apelaciones_activas']['indice_apelacion']['respuesta_admin'] = respuesta_admin
+
+        mensaje_adicional = ""
+
+        if nuevo_estado == 'aceptada':
+            REGISTROS_CALIFICACION_SIMULADOS[indice_registro]['alerta_activa'] = True
+            mensaje_adicional = "se ha re-activado la alerta del registro para revision por parte del profesor"
+        
+        return{
+            'exito': True,
+            'mensaje': f"apelacion {apelacion_id} ha sido marcada como '{nuevo_estado}' por el usuario {user_id_admin}. {mensaje_adicional} "
+        }
+
+
+
+    except Exception as e: 
+        return {'exito': False, 'mensaje': f"error interno al gesitonar la apelacion: {e}"}
+    
+
+REGISTROS_CALIFICACION_SIMULADOS.clear() # Limpiar cualquier registro previo
+datos_nota_ejemplo = {'participacion': 18.0, 'cuaderno': 13.0, 'practica': 18.0, 'exposicion': 18.0, 'prueba_mensual': 23.0} # Nota buena (90.0)
+datos_nota_ejemplo_vacia = {'participacion': 1.0, 'cuaderno': 1.0, 'practica': 1.0, 'exposicion': 1.0, 'prueba_mensual': 1.0} 
+
+print("\n--- Bloque de PRUEBA 6: Gestión Administrativa de Apelaciones ---")
+
+# 1. CREACIÓN Y PUBLICACIÓN DE REGISTRO BASE (Profesor 2005, Estudiante 1001)
+print("\n[Setup 1.1] Creación Inicial de Nota (Estudiante 1001)")
+registro_base = crear_o_actualizar_registro(
+    profesor_id=2005, 
+    estudiante_id=1001, 
+    materia='Matemáticas', 
+    periodo_num=3, 
+    campos=datos_nota_ejemplo, 
+    metodologia='Basada en Proyectos'
+)
+registro_id_base = registro_base.get('registro_ID')
+
+print("[Setup 1.2] Publicación del Registro")
+publicacion_resultado = publicar_registro_calificacion(user_id_publicador=2005, registro_id=registro_id_base)
+
+# 2. CREACIÓN DE LA APELACIÓN (Estudiante 1001)
+print("[Setup 1.3] Creación de Apelación para el Registro Base")
+apelacion_resultado = crear_apelacion(
+    estudiante_id=1001,
+    registro_id=registro_id_base,
+    comentario="Apelo la nota de exposición por un error de 2 puntos."
+)
+apelacion_id_base = apelacion_resultado.get('apelacion_id')
+print(f"Apelación Creada: ID={apelacion_id_base}. Estado inicial: Pendiente.")
+
+
+# --- ESCENARIO 1: ACEPTACIÓN EXITOSA (ADMINISTRACION 4002) ---
+print("\n[Escenario 1. ACEPTAR APELACIÓN]")
+resultado_aceptar = gestionar_apelacion_admin(
+    user_id_admin=4002, # ADMINISTRACION
+    registro_id=registro_id_base,
+    apelacion_id=apelacion_id_base,
+    nuevo_estado='Aceptada',
+    respuesta_admin='Apelación Aceptada. El profesor debe revisar la nota de Exposición.'
+)
+print(f"Resultado Aceptación: {resultado_aceptar.get('mensaje')}")
+
+# 3. VERIFICACIÓN POST-ACEPTACIÓN
+print("\n[Verificación 1. ACEPTACIÓN]")
+registro_final = REGISTROS_CALIFICACION_SIMULADOS[0]
+apelacion_final = registro_final['apelaciones_activas'][0]
+print(f"  > Estado Apelación: {apelacion_final['estado']}")
+print(f"  > Respuesta Admin: {apelacion_final['respuesta_admin']}")
+print(f"  > Alerta Activa: {registro_final['alerta_activa']} (Debe ser True)")
+
+
+# --- ESCENARIO 2: RECHAZO EXITOSO (DIRECTOR 3001) ---
+# Primero, creamos una nueva apelación para poder rechazarla
+print("\n[Setup 2.1] Creación de Segunda Apelación (para rechazar)")
+apelacion_resultado_rechazo = crear_apelacion(
+    estudiante_id=1001,
+    registro_id=registro_id_base,
+    comentario="Apelación sin fundamento para probar el rechazo."
+)
+apelacion_id_rechazo = apelacion_resultado_rechazo.get('apelacion_id')
+
+print("\n[Escenario 2. RECHAZAR APELACIÓN]")
+resultado_rechazar = gestionar_apelacion_admin(
+    user_id_admin=3001, # DIRECTOR
+    registro_id=registro_id_base,
+    apelacion_id=apelacion_id_rechazo,
+    nuevo_estado='Rechazada',
+    respuesta_admin='Apelación sin mérito. No se procede a la revisión.'
+)
+print(f"Resultado Rechazo: {resultado_rechazar.get('mensaje')}")
+
+# 4. VERIFICACIÓN POST-RECHAZO
+print("\n[Verificación 2. RECHAZO]")
+registro_final_rechazo = REGISTROS_CALIFICACION_SIMULADOS[0]
+apelacion_rechazada = registro_final_rechazo['apelaciones_activas'][1] # La segunda apelación
+print(f"  > Estado Apelación: {apelacion_rechazada['estado']}")
+print(f"  > Respuesta Admin: {apelacion_rechazada['respuesta_admin']}")
+
+
+# --- ESCENARIO 3: PRUEBA DE FALLO (PROFESOR 2005) ---
+print("\n[Escenario 3. FALLO DE PERMISO]")
+resultado_fallo = gestionar_apelacion_admin(
+    user_id_admin=2005, # PROFESOR (Sin permiso)
+    registro_id=registro_id_base,
+    apelacion_id=apelacion_id_base,
+    nuevo_estado='Aceptada',
+    respuesta_admin='Intento de profesor.'
+)
+print(f"Resultado Fallo: {resultado_fallo.get('mensaje')}") # Debe fallar por permiso
