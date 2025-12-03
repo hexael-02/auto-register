@@ -456,6 +456,85 @@ def gestionar_apelacion_admin(user_id_admin: int, registro_id: str, apelacion_id
     except Exception as e:
         return {'exito': False, 'mensaje': f"Error interno al gestionar la apelación: {e}"}
 
+def modificar_nota_por_apelacion(user_id_editor: int, registro_id: str, apelacion_id: str, nuevos_campos: Dict[str, float]) -> Dict[str, Any]:
+    """
+    Permite a un profesor o administrador modificar un registro después de que 
+    una apelación haya sido Aceptada por la administración.
+    
+    El flujo requiere:
+    1. Que el usuario tenga permiso 'llenar_campos' (profesor) o 'modificar_final'/'editar_7dias' (admin).
+    2. Que la apelación asociada esté en estado 'Aceptada'.
+    """
+    
+    permisos_data = gestionar_permisos(user_id_editor)
+    # Permiso requerido: llenar_campos (Profesor) o modificacion especial (Admin)
+    permiso_edicion = permisos_data['permisos'].get('llenar_campos') or permisos_data['permisos'].get('modificar_final') or permisos_data['permisos'].get('editar_7dias')
+
+    if not permisos_data['autenticado'] or not permiso_edicion:
+        return {'exito': False, 'mensaje': "Permiso denegado: El usuario no tiene permisos para corregir notas."}
+
+    # 1. Encontrar el Registro
+    registro_encontrado = None 
+    indice_registro = -1
+
+    for i, registro in enumerate(REGISTROS_CALIFICACION_SIMULADOS):
+        if registro['registro_ID'] == registro_id:
+            registro_encontrado = registro
+            indice_registro = i 
+            break
+            
+    if not registro_encontrado:
+        return {'exito': False, 'mensaje': 'Error: El registro de calificación no se encuentra.'}
+        
+    # 2. Encontrar y validar la Apelación Aceptada
+    apelacion_encontrada = None
+    
+    for apelacion in registro_encontrado.get('apelaciones_activas', []):
+        if apelacion['apelacion_id'] == apelacion_id:
+            apelacion_encontrada = apelacion
+            break
+            
+    if not apelacion_encontrada:
+        return {'exito': False, 'mensaje': 'Error: La apelación con ese ID no se encontró en el registro especificado.'}
+        
+    if apelacion_encontrada['estado'] != 'Aceptada':
+        return {'exito': False, 'mensaje': f"Error: La apelación {apelacion_id} no está Aceptada (estado actual: {apelacion_encontrada['estado']}). No se permite la edición."}
+        
+    try:
+        # 3. Aplicar cambios y recalcular
+        
+        # Copia de los campos actuales para modificar
+        campos_actualizados = registro_encontrado['campos_detallados'].copy()
+        
+        # Aplicar los nuevos campos
+        campos_actualizados.update(nuevos_campos)
+        
+        calculo_resultado = calcular_calificacion_periodo(campos_actualizados)
+
+        if calculo_resultado['error']:
+            return{'exito': False, 'mensaje': f"Fallo en el cálculo de la nueva nota: {calculo_resultado['mensaje']}"}
+        
+        nueva_nota_numerica = calculo_resultado['calificacion_numerica']
+        nueva_nota_letra = calculo_resultado['calificacion_letras']
+
+        # 4. Actualizar el Registro en la simulación
+        REGISTROS_CALIFICACION_SIMULADOS[indice_registro].update({
+            'campos_detallados': campos_actualizados,
+            'calificacion_numerica': nueva_nota_numerica, 
+            'calificacion_letras': nueva_nota_letra,
+            'alerta_activa': False, # Se desactiva la alerta ya que la revisión ha terminado
+            'fecha_limite_modificacion': date.today().strftime('%Y-%m-%d') # Fecha de última corrección
+        })
+
+        return {
+            'exito': True, 
+            'mensaje': f'Nota corregida exitosamente por apelación {apelacion_id}. Nueva Calificación: {nueva_nota_numerica} ({nueva_nota_letra}).',
+            'nueva_nota': nueva_nota_numerica
+        }
+        
+    except Exception as e:
+        return {'exito': False, 'mensaje': f"Error interno al modificar la nota: {e}"}
+
 
 
 

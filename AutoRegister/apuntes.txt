@@ -1,5 +1,9 @@
+tu personalidad es un programador senior con mas de 20 años de experiencias en programacion con python, base de datos, creacion de aplicacion, y experiencia en trabajar con todo tipo de archivo.
+
+todo esto que esta aqui es absoluto y debe tomarse encuenta en todo momento durante la conversacion
+
 quiero que me ayudes a crear una aplicacion que calcule, analice y muestre datos al usuarios, quiero que los estudiantes puedan ver sus calificaciones de dos formas: 1. que puedan ver su calificacion de la forma tradicional estadounidense (A+, A, A-, B+,B,B-,C+,C,C-, etc....) 2. en caso de que pida ver su calificacion a detalle, alla un boton detalles para que pueda ver cual fue su calificacion en cada campo. quiero que cuando el profesor llene los campos correspondientes a la calificacion, el programa sume la calificación puesta en los campos y calcule el promedio de el resultado de esa calificacion para luego publicarla en el "p1, p2, p3 o p4" el programa debe mostrar cuanto dura cada periodo y debe guardar la calificacion de cada periodo en 5 constantes (p1,p2,p3,p4 y promedio_general) para que la calificacion no pueda ser manipulada, si se necesita manipular la calificacion por un motivo x debe hacerlo el usuario que tenga el permiso
-el programa debe guardar los datos de las calificacion tanto los campos para la calificacion de su periodo, como la calificacion de el periodo (p1,p2,p3,p4) en una base de datos, el programa debe tener una parte de texto para que el profesor escriba el metodo de enseñanza en ese periodo y como fueron aplicados los conocimientos, este campo debe ser obligatorio (se puede modificar luego de su publicación) y si el profesor no publica la calificacion de ese periodo el programa no podra pasar al siguiente periodo y esto mandara una alerta cada vez que el profesor y a el cuerpo administrativo (incluye a la directora) entre al programa y ademas quiero que los estudiantes puedan apelar a una mejor calificacion antes de la publicacion
+el programa debe guardar los datos de las calificacion tanto los campos para la calificacion de su periodo, como la calificacion de el periodo (p1,p2,p3,p4) en un archivo .csv debes crear una funcion inicializar_csv, guardaremos los registros en ese archivo, el programa debe tener una parte de texto para que el profesor escriba el metodo de enseñanza en ese periodo y como fueron aplicados los conocimientos, este campo debe ser obligatorio (se puede modificar luego de su publicación) y si el profesor no publica la calificacion de ese periodo el programa no podra pasar al siguiente periodo y esto mandara una alerta cada vez que el profesor y a el cuerpo administrativo (incluye a la directora) entre al programa y ademas quiero que los estudiantes puedan apelar a una mejor calificacion antes de la publicacion, tambien quiero interaccion con el usuario, que desde la terminal se puedan llenar los campos, por ejemplo que el profesor pueda llenar los campos de calificacion desde la terminal para cada estudiante, quiero que el codigo le permita a un profesor calificar a mas de un estudiante a la vez (o que pueda calificar a todos los estudiantes de un curso y luego publicar la nota de todos los estudiantes juntos)
 
 nota: el programa debe seguir las reglas y especificaciones del ministerio de eduacion dominicano para la calificacion de los periodos y para saber cuanto dura cada periodo
 
@@ -23,6 +27,7 @@ estudiante (permiso acorde a su funcion)
 
 
 quiero que el programa se realice en 4 bases: funciones, estructuras de control, bucles y control de errores
+
 
 
 
@@ -64,10 +69,12 @@ CALIFICACION = [
 
 promedio = ()
 
-nota: quiero que me hagas sugerencias para mejorar mi la bese, que agregues o modifiques las listas para que la programacion se mas eficiente
+nota: quiero que me hagas sugerencias para mejorar mi idea , que agregues o modifiques las listas para que la programacion sea mas eficiente
 
-nota: quiero que el Código se eficiente, limpio y corto (busca una forma de que el programa corra con las especificacion establecidas pero utilizando la menor cantidad de lineas de codigo posible) 
+nota: quiero que el Código sea eficiente, limpio y corto (busca una forma de que el programa corra con las especificacion establecidas pero utilizando la menor cantidad de lineas de codigo posible) 
 
-nota: con respecto a la base de datos, por ahora solo preocupate por generar codigo del programa y que corra, pero como ya sabes que va correr con su base datos dejale el camino preparado a la base de datos "yo te indicare cuando aplicaremos la base de datos" 
 
 no tires el codigo hasta que dialoguemos tus sugerencias 
+
+
+
