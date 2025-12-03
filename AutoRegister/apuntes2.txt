@@ -1,0 +1,827 @@
+# Sistema de Gestión y Registro de Calificaciones MINERD - Versión 1.0
+# Desarrollado para demostrar la persistencia y el flujo de datos.
+# Este archivo contiene 830 líneas para una explicación exhaustiva.
+
+# --- 1. Importaciones de Librerías --- (Líneas 6-12)
+import pandas as pd              # Línea 6: Para manejar datos como una hoja de cálculo (Excel).
+import csv                       # Línea 7: Para leer y escribir archivos CSV (texto con datos separados por comas).
+import os                        # Línea 8: Para interactuar con el sistema (ej. verificar si un archivo existe).
+import json                      # Línea 9: Para guardar estructuras complejas (como diccionarios) dentro del CSV.
+import hashlib                   # Línea 10: Para generar identificadores únicos y cortos (huellas digitales de datos).
+from datetime import date, datetime, timedelta # Línea 11: Para trabajar con fechas y horas (fechas de ingreso, plazos).
+import time                      # Línea 12: Para pausas en el menú y simular procesos (pausa de 1 segundo).
+
+# --- 2. Configuración y Constantes Globales --- (Líneas 14-61)
+
+ARCHIVO_CSV = "minerd_calificaciones.csv" # Línea 14: Nombre del archivo principal que guarda todas las notas.
+ID_COUNTER_FILE = "minerd_id_counter.txt" # Línea 15: Archivo para guardar el último número de ID de registro.
+ESTADO_INICIAL_NOTA = "N/A"      # Línea 16: Valor por defecto para notas que aún no se han llenado.
+PLAZO_REVISION_DIAS = 5          # Línea 17: Constante que define el plazo de 5 días para solicitar revisión.
+
+# Estructura del DataFrame (Nombres de las columnas de nuestra hoja de cálculo)
+COLUMNS = [                      # Línea 20: Inicio de la lista de columnas.
+    'ID_REGISTRO',               # Línea 21: Identificador único de esta fila (la huella digital de la nota).
+    'profesor_ID',               # Línea 22: Quién puso la nota.
+    'estudiante_ID',             # Línea 23: A quién pertenece la nota.
+    'periodo',                   # Línea 24: Periodo escolar (ej. P1, P2, P3).
+    'asignatura',                # Línea 25: Materia o clase (ej. Matemáticas, Lengua).
+    'fecha_ingreso',             # Línea 26: Cuándo se cargó esta nota por última vez.
+    'estado_publicacion',        # Línea 27: ¿Es visible para el estudiante? (True/False).
+    'P_PARTICIPACION',           # Línea 28: Nota de Participación.
+    'P_PROYECTO',                # Línea 29: Nota de Proyecto.
+    'P_TAREA',                   # Línea 30: Nota de Tarea.
+    'P_EXAMEN',                  # Línea 31: Nota de Examen.
+    'P_NOTA_FINAL',              # Línea 32: La nota final calculada (numérica).
+    'P_LETRA_FINAL',             # Línea 33: La nota final en letra (A, B, C, F).
+    'P_DETALLES_JSON',           # Línea 34: Información extra (como notas parciales de un proyecto) guardada en texto JSON.
+    'estado_revision'            # Línea 35: ¿El estudiante solicitó que se revise esta nota? (True/False).
+]                                # Línea 36: Fin de la lista de columnas.
+
+# Pesos y escala de calificación (Los porcentajes que vale cada parte)
+PESOS_CALIFICACION = {           # Línea 39: Inicio del diccionario de pesos.
+    'P_PARTICIPACION': 0.15,     # Línea 40: Participación vale 15% del total.
+    'P_PROYECTO': 0.35,          # Línea 41: Proyecto vale 35% del total.
+    'P_TAREA': 0.25,             # Línea 42: Tarea vale 25% del total.
+    'P_EXAMEN': 0.25,            # Línea 43: Examen vale 25% del total.
+}                                # Línea 44: Fin del diccionario de pesos.
+
+CALIFICACION_CAMPOS = list(PESOS_CALIFICACION.keys()) # Línea 46: Una lista sencilla con los nombres de las categorías de notas (Participación, Proyecto, etc.).
+
+# Escala numérica a letra (Importante: se revisa de mayor a menor)
+ESCALA_CALIFICACION = {          # Línea 49: Inicio del diccionario de la escala de letras.
+    90: 'A',                     # Línea 50: 90 o más es una 'A'.
+    80: 'B',                     # Línea 51: 80 a 89.99 es una 'B'.
+    70: 'C',                     # Línea 52: 70 a 79.99 es una 'C'.
+    60: 'D',                     # Línea 53: 60 a 69.99 es una 'D'.
+    0: 'F'                       # Línea 54: Menos de 60 es una 'F' (Fallo).
+}                                # Línea 55: Fin del diccionario de escala.
+
+# Roles del sistema (Quién puede hacer qué)
+ROLES = {                        # Línea 58: Inicio del diccionario de roles.
+    'DIRECTOR': 'Director/a',    # Línea 59: Rol de Director.
+    'PROFESOR': 'Profesor/a',    # Línea 60: Rol de Profesor.
+    'ESTUDIANTE': 'Estudiante'   # Línea 61: Rol de Estudiante.
+}                                # Línea 62: Fin del diccionario de roles.
+
+# Usuarios de prueba (Mock) y sus roles
+USUARIOS_MOCK = {                # Línea 65: Inicio del diccionario de usuarios de prueba.
+    '0': ROLES['DIRECTOR'],      # Línea 66: ID 0 es el Director.
+    '1001': ROLES['PROFESOR'],   # Línea 67: ID 1001 es el Profesor de Matemáticas.
+    '1002': ROLES['PROFESOR'],   # Línea 68: ID 1002 es el Profesor de Lengua.
+    '2001': ROLES['ESTUDIANTE'], # Línea 69: ID 2001 es el Estudiante A.
+    '2002': ROLES['ESTUDIANTE'], # Línea 70: ID 2002 es el Estudiante B.
+    '2003': ROLES['ESTUDIANTE']  # Línea 71: ID 2003 es el Estudiante C.
+}                                # Línea 72: Fin del diccionario de usuarios.
+
+# Asignaturas de prueba
+ASIGNATURAS_MOCK = {             # Línea 75: Inicio del diccionario de asignaturas.
+    'MAT': 'Matemáticas',        # Línea 76: Clave 'MAT' para Matemáticas.
+    'LEN': 'Lengua Española',    # Línea 77: Clave 'LEN' para Lengua Española.
+    'SOC': 'Ciencias Sociales'   # Línea 78: Clave 'SOC' para Ciencias Sociales.
+}                                # Línea 79: Fin del diccionario de asignaturas.
+
+# Asignación de asignaturas a profesores (para la lógica de llenado de notas)
+ASIGNACION_PROFESOR = {          # Línea 82: Inicio del diccionario de asignación.
+    '1001': ['MAT', 'SOC'],      # Línea 83: Profesor 1001 da Matemáticas y Sociales.
+    '1002': ['LEN']              # Línea 84: Profesor 1002 da Lengua.
+}                                # Línea 85: Fin del diccionario de asignación.
+
+# --- 3. Clase GeneradorIDs (Manejo de IDs Únicos) --- (Líneas 88-142)
+
+def get_max_mock_id(users_mock): # Línea 88: Función para encontrar la ID más alta entre los usuarios de prueba.
+    """Obtiene el ID numérico máximo de los usuarios de prueba.""" # Línea 89: Docstring (explicación de la función).
+    try:                         # Línea 90: Intenta el siguiente código.
+        # Convierte todas las claves de ID a números enteros y encuentra el máximo.
+        return max([int(k) for k in users_mock.keys()]) # Línea 92: Devuelve el valor más grande de la lista de IDs convertidas.
+    except ValueError:           # Línea 93: Si algo falla (ej. una ID no es un número)...
+        return 0                 # Línea 94: Devuelve 0 como valor seguro.
+
+class GeneradorIDs:              # Línea 96: Define la clase (el molde) para gestionar los números de ID.
+    """Clase para gestionar la generación de IDs secuenciales y de hash.""" # Línea 97: Docstring de la clase.
+
+    def __init__(self, counter_file=ID_COUNTER_FILE): # Línea 99: Constructor. Se ejecuta al crear un objeto GeneradorIDs.
+        self.counter_file = counter_file             # Línea 100: Guarda el nombre del archivo del contador.
+        self.max_mock_id = get_max_mock_id(USUARIOS_MOCK) # Línea 101: Guarda la ID más alta de los usuarios de prueba.
+        self.current_id = 0                          # Línea 102: Inicializa el contador de ID actual a cero.
+        self._initialize_counter()                   # Línea 103: Llama al método interno para cargar el contador desde el disco.
+
+    def _initialize_counter(self): # Línea 105: Método interno para leer el último ID guardado.
+        """Establece el contador inicial leyendo el archivo o usando el max mock id.""" # Línea 106: Docstring.
+        if os.path.exists(self.counter_file):        # Línea 107: Pregunta: ¿Existe el archivo del contador?
+            try:                                     # Línea 108: Si existe, intenta leerlo.
+                with open(self.counter_file, 'r') as f: # Línea 109: Abre el archivo en modo lectura ('r').
+                    content = f.read().strip()       # Línea 110: Lee el contenido y elimina espacios extra.
+                    if content:                      # Línea 111: Si el archivo no está vacío...
+                        # Asegura que el contador no sea menor que la ID más alta de prueba.
+                        self.current_id = max(self.max_mock_id, int(content)) # Línea 113: Toma el mayor entre la ID del archivo y la ID de prueba.
+                    else:                            # Línea 114: Si el archivo está vacío...
+                        self.current_id = self.max_mock_id # Línea 115: Usa la ID más alta de prueba.
+            except Exception as e:                   # Línea 116: Si hay un error al leer el archivo...
+                print(f"Error al leer contador de ID: {e}") # Línea 117: Imprime el error.
+                self.current_id = self.max_mock_id   # Línea 118: Usa el valor seguro.
+        else:                                        # Línea 119: Si el archivo del contador no existe...
+            self.current_id = self.max_mock_id       # Línea 120: Usa la ID más alta de prueba.
+
+    def generar_id_secuencial(self): # Línea 122: Método para crear un nuevo ID numérico.
+        """Incrementa y guarda el contador, luego devuelve la nueva ID.""" # Línea 123: Docstring.
+        self.current_id += 1                         # Línea 124: Suma 1 al contador actual.
+        nuevo_id = str(self.current_id)              # Línea 125: Convierte el nuevo número a texto.
+        try:                                         # Línea 126: Intenta guardar el nuevo contador.
+            with open(self.counter_file, 'w') as f:  # Línea 127: Abre el archivo en modo escritura ('w') para sobrescribir.
+                f.write(nuevo_id)                    # Línea 128: Escribe el nuevo ID.
+        except Exception as e:                       # Línea 129: Si hay un error al guardar...
+            print(f"Error al guardar contador de ID: {e}") # Línea 130: Imprime el error.
+        return nuevo_id                              # Línea 131: Devuelve la nueva ID generada.
+
+    @staticmethod                     # Línea 133: Decorador que indica que esta función no usa variables del objeto.
+    def generar_id_registro(data_tuple): # Línea 134: Método estático para crear la ID de registro única (el hash).
+        """Genera un hash SHA-256 corto a partir de una tupla de datos clave.""" # Línea 135: Docstring.
+        # Los datos clave son: profesor_ID, estudiante_ID, periodo, asignatura.
+        data_str = "".join(map(str, data_tuple)) # Línea 137: Une todos los elementos de la tupla en una sola cadena de texto.
+        # 1. Codifica la cadena a bytes (.encode()).
+        # 2. Calcula el hash SHA-256.
+        # 3. Lo convierte a texto hexadecimal (.hexdigest()).
+        # 4. Lo trunca a los primeros 8 caracteres ([:8]) para que sea corto.
+        return hashlib.sha256(data_str.encode()).hexdigest()[:8] # Línea 142: Devuelve la ID de registro única.
+
+id_manager = GeneradorIDs()              # Línea 144: CREACIÓN DEL OBJETO: Creamos la herramienta que gestionará las IDs.
+
+# --- 4. Funciones de Gestión de Datos (Archivo CSV) --- (Líneas 147-194)
+
+def inicializar_csv():                   # Línea 147: Función para asegurar que el archivo de datos existe.
+    """Crea el archivo CSV con los encabezados si no existe.""" # Línea 148: Docstring.
+    if not os.path.exists(ARCHIVO_CSV):  # Línea 149: Si el archivo principal NO existe...
+        print("Inicializando archivo CSV...") # Línea 150: Imprime un mensaje informativo.
+        try:                             # Línea 151: Intenta crear el archivo.
+            # Crea un DataFrame (tabla) vacío, solo con las columnas definidas.
+            df_vacio = pd.DataFrame(columns=COLUMNS) # Línea 153: Crea la tabla vacía con los nombres de las columnas.
+            # Guarda la tabla en el archivo CSV. index=False evita guardar los números de fila de Pandas.
+            df_vacio.to_csv(ARCHIVO_CSV, index=False, encoding='utf-8') # Línea 155: Escribe la cabecera en el archivo.
+            print("Archivo CSV creado exitosamente.") # Línea 156: Confirma el éxito.
+        except Exception as e:           # Línea 157: Si hay algún error al crear...
+            print(f"Error al inicializar el archivo CSV: {e}") # Línea 158: Imprime el error.
+
+def cargar_datos():                      # Línea 160: Función para leer el archivo CSV y cargarlo en Pandas.
+    """Carga los datos del CSV en un DataFrame de Pandas.""" # Línea 161: Docstring.
+    try:                                 # Línea 162: Intenta leer el archivo.
+        df = pd.read_csv(ARCHIVO_CSV, encoding='utf-8') # Línea 163: Lee el CSV y lo guarda en 'df'.
+        
+        # --- Limpieza y tipado de datos para asegurar consistencia ---
+        # Convertir IDs a texto (string) para evitar problemas de formato.
+        df['profesor_ID'] = df['profesor_ID'].astype(str) # Línea 167: Asegura que la columna 'profesor_ID' sea texto.
+        df['estudiante_ID'] = df['estudiante_ID'].astype(str) # Línea 168: Asegura que la columna 'estudiante_ID' sea texto.
+        
+        # Rellenar cualquier valor faltante (NaN) con el valor por defecto "N/A"
+        for col in CALIFICACION_CAMPOS + ['P_NOTA_FINAL', 'P_LETRA_FINAL']: # Línea 171: Bucle que recorre las columnas de notas y finales.
+            df[col] = df[col].fillna(ESTADO_INICIAL_NOTA) # Línea 172: Rellena los huecos (NaN) con "N/A".
+            
+        # Asegurar que las columnas de True/False son booleanas
+        df['estado_publicacion'] = df['estado_publicacion'].fillna(False).astype(bool) # Línea 175: Trata los faltantes como False, y convierte la columna a Booleano.
+        df['estado_revision'] = df['estado_revision'].fillna(False).astype(bool)       # Línea 176: Similar para el estado de revisión.
+        
+        return df                        # Línea 178: Devuelve la tabla de datos cargada y lista para usar.
+    
+    except FileNotFoundError:            # Línea 180: Si el archivo no se encuentra...
+        print(f"Archivo {ARCHIVO_CSV} no encontrado. Creando DataFrame vacío.") # Línea 181: Imprime que el archivo no está.
+        # Devuelve una tabla vacía para que el programa pueda seguir sin romperse.
+        return pd.DataFrame(columns=COLUMNS) # Línea 183: Devuelve la tabla vacía.
+    
+    except Exception as e:               # Línea 185: Si hay cualquier otro error (inesperado)...
+        print(f"Error desconocido al cargar datos: {e}") # Línea 186: Imprime el error.
+        return pd.DataFrame(columns=COLUMNS) # Línea 187: Devuelve la tabla vacía.
+
+def guardar_datos(df):                   # Línea 189: Función para guardar el DataFrame actualizado al CSV.
+    """Guarda el DataFrame actual en el archivo CSV.""" # Línea 190: Docstring.
+    try:                                 # Línea 191: Intenta guardar el archivo.
+        # Escribe la tabla de datos en el CSV, sobrescribiendo el contenido anterior.
+        df.to_csv(ARCHIVO_CSV, index=False, encoding='utf-8') # Línea 193: Guarda el DataFrame.
+        print("Datos guardados exitosamente.") # Línea 194: Confirma el éxito.
+    except Exception as e:                   # Línea 195: Si hay un error al escribir...
+        print(f"Error al guardar datos: {e}") # Línea 196: Imprime el error.
+
+# --- 5. Lógica de Negocio y Cálculos --- (Líneas 199-247)
+
+def verificar_permiso(user_id, accion): # Línea 199: Función de seguridad para ver si un usuario puede hacer algo.
+    """Verifica si el ID de usuario tiene permiso para realizar una acción.""" # Línea 200: Docstring.
+    rol = USUARIOS_MOCK.get(user_id)     # Línea 201: Busca el rol del usuario en la lista de prueba.
+    
+    # Esta es una versión simplificada: el Director/Profesor SIEMPRE tienen permisos en este mock.
+    if rol in [ROLES['DIRECTOR'], ROLES['PROFESOR']]: # Línea 204: Si el rol es Director o Profesor...
+        # Los roles de gestión SIEMPRE tienen los permisos clave (llenar, publicar, ver)
+        return accion in ['llenar_notas', 'publicar_notas', 'ver_registro', 'ver_reportes'] # Línea 206: Devuelve True si la acción es una de gestión.
+    
+    elif rol == ROLES['ESTUDIANTE']:     # Línea 208: Si el rol es Estudiante...
+        # Los estudiantes solo pueden ver y solicitar revisión.
+        return accion in ['ver_registro', 'solicitar_revision'] # Línea 210: Devuelve True si la acción es ver o solicitar.
+        
+    return False                         # Línea 212: Si la ID no se encuentra, devuelve False.
+
+def calcular_nota_final(detalles):       # Línea 214: Función para calcular la nota final ponderada.
+    """Calcula la nota final basándose en los pesos definidos.""" # Línea 215: Docstring.
+    nota_final = 0                       # Línea 216: Inicializa la suma de la nota en 0.
+    
+    # Bucle que recorre cada campo (Participación, Proyecto, etc.) y su peso.
+    for campo, peso in PESOS_CALIFICACION.items(): # Línea 219: Recorre el diccionario de pesos.
+        # Obtiene la nota para ese campo. Si no existe en 'detalles', usa 0.
+        valor = detalles.get(campo, 0)   # Línea 221: Obtiene el valor de la nota parcial.
+        nota_final += valor * peso       # Línea 222: Suma a la nota final: (valor de la nota * su peso).
+        
+    return round(nota_final, 2)          # Línea 224: Devuelve el resultado redondeado a 2 decimales.
+
+def convertir_a_letra(nota):            # Línea 226: Función para convertir el número a la letra de calificación.
+    """Convierte la nota numérica final a su representación en letra.""" # Línea 227: Docstring.
+    if nota == ESTADO_INICIAL_NOTA:      # Línea 228: Si la nota es "N/A"...
+        return ESTADO_INICIAL_NOTA       # Línea 229: Devuelve "N/A".
+    
+    try:                                 # Línea 231: Intenta la conversión.
+        nota = float(nota)               # Línea 232: Convierte la nota a un número decimal.
+    except ValueError:                   # Línea 233: Si no se puede convertir (ej. el texto es "Error")...
+        return "Error"                   # Línea 234: Devuelve "Error".
+    
+    # Es crucial iterar de mayor a menor para asignar la letra correcta.
+    # Ejemplo: Si la nota es 91, debe ser 'A' (>= 90), no 'B' (>= 80).
+    for limite, letra in sorted(ESCALA_CALIFICACION.items(), reverse=True): # Línea 238: Bucle: Recorre la escala ordenada de mayor a menor.
+        if nota >= limite:               # Línea 239: Si la nota es mayor o igual al límite...
+            return letra                 # Línea 240: Devuelve la letra y detiene la función.
+            
+    return 'F'                           # Línea 242: Si no cumple con ningún límite (ej. nota < 0), devuelve 'F'.
+
+def es_registro_valido(registro):        # Línea 244: Función para comprobar si una nota tiene los campos necesarios.
+    """Verifica que un registro (una fila de nota) contenga los campos clave.""" # Línea 245: Docstring.
+    campos_clave = ['profesor_ID', 'estudiante_ID', 'periodo', 'asignatura'] # Línea 246: Los campos que son obligatorios.
+    # Comprueba si TODOS los campos clave existen en el diccionario 'registro'.
+    return all(campo in registro for campo in campos_clave) # Línea 248: Devuelve True si todos los campos están, False si falta alguno.
+
+# --- 6. Función de Alertas y Notificaciones --- (Líneas 250-305)
+
+def check_alerts(df, user_id):           # Línea 250: Función que muestra mensajes importantes al iniciar sesión.
+    """Muestra alertas específicas al rol del usuario.""" # Línea 251: Docstring.
+    print("\n" + "="*40)                 # Línea 252: Imprime una línea de separación.
+    print("--- 🔔 CENTRO DE NOTIFICACIONES Y ALERTA 🔔 ---") # Línea 253: Imprime el título del centro de alertas.
+    print("="*40)                        # Línea 254: Imprime una línea de separación.
+    
+    rol = USUARIOS_MOCK.get(user_id)     # Línea 256: Obtiene el rol del usuario actual.
+    
+    if rol is None:                      # Línea 258: Si el rol es nulo (no debería pasar aquí, pero es una seguridad)...
+        print("Error: Rol no identificado.") # Línea 259: Imprime un error.
+        return                           # Línea 260: Termina la función.
+        
+    # --- Alertas para Profesores/Directores ---
+    if rol in [ROLES['PROFESOR'], ROLES['DIRECTOR']]: # Línea 264: Si es Director o Profesor...
+        
+        # 1. Alerta de Solicitudes de Revisión Pendientes
+        filtro_rev = (df['estado_revision'] == True) # Línea 267: Filtro: todas las filas con estado_revision = True.
+        
+        if rol == ROLES['PROFESOR']:         # Línea 269: Si es Profesor...
+            # Limita el filtro solo a las notas que él ingresó.
+            filtro_rev = filtro_rev & (df['profesor_ID'] == user_id) # Línea 271: Agrega la condición: ID del profesor = ID del usuario.
+            
+        solicitudes_pendientes = df[filtro_rev] # Línea 273: Aplica el filtro para obtener las filas.
+        
+        if not solicitudes_pendientes.empty: # Línea 275: Si la tabla de resultados NO está vacía...
+            num_rev = len(solicitudes_pendientes) # Línea 276: Cuenta cuántas solicitudes hay.
+            print(f"🚨 TIENES {num_rev} SOLICITUDES DE REVISIÓN PENDIENTES. ¡Acciona el menú de revisión!") # Línea 277: Imprime la alerta.
+        else:                                # Línea 278: Si no hay solicitudes...
+            print("✅ No hay solicitudes de revisión pendientes.") # Línea 279: Imprime el mensaje de éxito.
+            
+        # 2. Alerta de Notas Ingresadas, No Publicadas (Riesgo de Plazo)
+        filtro_pub = (df['estado_publicacion'] == False) & (df['P_NOTA_FINAL'] != ESTADO_INICIAL_NOTA) # Línea 282: Filtro: notas NO publicadas, pero SÍ calculadas.
+        if rol == ROLES['PROFESOR']:         # Línea 284: Si es Profesor...
+            filtro_pub = filtro_pub & (df['profesor_ID'] == user_id) # Línea 285: Limita el filtro solo a sus notas.
+            
+        pendientes_pub = df[filtro_pub]      # Línea 287: Aplica el filtro.
+        
+        if not pendientes_pub.empty:         # Línea 289: Si hay notas pendientes de publicar...
+            num_pub = len(pendientes_pub)    # Línea 290: Cuenta cuántas son.
+            print(f"⚠️ TIENES {num_pub} NOTAS INGRESADAS PERO NO PUBLICADAS. ¡Publica pronto!") # Línea 291: Imprime la alerta de publicación.
+            
+    # --- Alertas para Estudiantes ---
+    elif rol == ROLES['ESTUDIANTE']:         # Línea 295: Si el usuario es un Estudiante...
+        # Alerta de Notas Publicadas
+        filtro_est = (df['estudiante_ID'] == user_id) & (df['estado_publicacion'] == True) # Línea 298: Filtro: notas del estudiante Y publicadas.
+        notas_publicadas = df[filtro_est]    # Línea 299: Aplica el filtro.
+        
+        if not notas_publicadas.empty:       # Línea 301: Si hay notas publicadas...
+            num_pub = len(notas_publicadas)  # Línea 302: Cuenta cuántas son.
+            print(f"⭐ ¡Tienes {num_pub} notas NUEVAS PUBLICADAS! Revisa tus calificaciones.") # Línea 303: Imprime la alerta de nuevas notas.
+        else:                                # Línea 304: Si no hay notas...
+            print("⏳ Aún no tienes notas publicadas para revisar.") # Línea 305: Imprime mensaje de espera.
+            
+    print("="*40)                            # Línea 307: Imprime una línea de cierre.
+    time.sleep(1)                            # Línea 308: Hace una pausa de 1 segundo para que el usuario pueda leer las alertas.
+
+# --- 7. Funciones de Flujo (Menús y Acciones) --- (Líneas 311-827)
+# Debido a la restricción de 822 líneas, esta sección es muy detallada.
+
+def mostrar_registro_usuario(df, user_id, rol): # Línea 311: Función para mostrar las notas al usuario.
+    """Muestra las notas relevantes para el usuario (Profesor/Estudiante).""" # Línea 312: Docstring.
+    if not verificar_permiso(user_id, 'ver_registro'): # Línea 313: Verifica el permiso.
+        print("Permiso denegado.")            # Línea 314: Deniega si no hay permiso.
+        return                               # Línea 315: Termina.
+    
+    print("\n--- REGISTRO DE CALIFICACIONES ---") # Línea 317: Título.
+    
+    if rol == ROLES['ESTUDIANTE']:           # Línea 319: Si es Estudiante...
+        # Filtra solo las notas del estudiante, y solo las que están publicadas.
+        filtro = (df['estudiante_ID'] == user_id) & (df['estado_publicacion'] == True) # Línea 321: El filtro.
+        columnas_a_mostrar = ['periodo', 'asignatura', 'P_PARTICIPACION', 'P_PROYECTO', # Línea 322: Columnas visibles para el estudiante.
+                              'P_TAREA', 'P_EXAMEN', 'P_NOTA_FINAL', 'P_LETRA_FINAL', 'estado_revision'] # Línea 323: Más columnas.
+        
+        df_mostrar = df[filtro][columnas_a_mostrar] # Línea 325: Aplica el filtro y selecciona las columnas.
+        print(f"Mostrando notas PUBLICADAS para el Estudiante ID {user_id}:") # Línea 326: Mensaje.
+        
+    elif rol in [ROLES['PROFESOR'], ROLES['DIRECTOR']]: # Línea 328: Si es Profesor o Director...
+        # Filtra todas las notas si es Director, o solo las suyas si es Profesor.
+        filtro = (df['profesor_ID'] == user_id) if rol == ROLES['PROFESOR'] else (df['estudiante_ID'].isin(USUARIOS_MOCK.keys())) # Línea 330: Si es profesor, sus notas; si es director, todas las de los estudiantes mock.
+        columnas_a_mostrar = COLUMNS # Línea 331: Muestra TODAS las columnas.
+        df_mostrar = df[filtro][columnas_a_mostrar] # Línea 332: Aplica el filtro y muestra todas las columnas.
+        print(f"Mostrando TODOS los registros bajo la ID {user_id} ({rol}):") # Línea 333: Mensaje.
+
+    if df_mostrar.empty:                     # Línea 335: Si la tabla filtrada está vacía...
+        print("No hay registros para mostrar.") # Línea 336: Mensaje de que no hay datos.
+    else:                                    # Línea 337: Si hay datos...
+        # Muestra la tabla de datos sin el índice de Pandas (números de fila).
+        print(df_mostrar.to_string(index=False)) # Línea 339: Imprime la tabla completa en texto.
+
+    input("\nPresione Enter para continuar...") # Línea 341: Pausa para que el usuario pueda revisar la tabla.
+
+def obtener_input_numerico(prompt, min_val, max_val): # Línea 343: Función para pedir un número válido.
+    """Solicita al usuario un número entre min_val y max_val.""" # Línea 344: Docstring.
+    while True:                                  # Línea 345: Bucle infinito hasta que se ingrese un valor correcto.
+        try:                                     # Línea 346: Intenta el código.
+            valor = input(prompt)                # Línea 347: Pide el valor al usuario.
+            if valor.strip().upper() == ESTADO_INICIAL_NOTA: # Línea 348: Si el usuario escribe "N/A"...
+                return ESTADO_INICIAL_NOTA       # Línea 349: Devuelve la constante "N/A".
+            
+            numero = float(valor)                # Línea 351: Convierte el input a número decimal.
+            if min_val <= numero <= max_val:     # Línea 352: Comprueba si el número está en el rango permitido.
+                return numero                    # Línea 353: Si está bien, devuelve el número.
+            else:                                # Línea 354: Si está fuera del rango...
+                print(f"Error: El valor debe estar entre {min_val} y {max_val}.") # Línea 355: Mensaje de error de rango.
+        except ValueError:                       # Línea 356: Si el input no se puede convertir a número...
+            print("Error: Ingrese un número válido (ej. 85 o 92.5).") # Línea 357: Mensaje de error de formato.
+
+def llenar_nota_registro(df, user_id, estudiante_id, asignatura_clave, periodo='P1'): # Línea 359: Función para ingresar notas parciales.
+    """Permite al profesor/director llenar las notas parciales de un registro.""" # Línea 360: Docstring.
+    print(f"\n--- Llenando Notas para Estudiante ID: {estudiante_id} / Asignatura: {ASIGNATURAS_MOCK[asignatura_clave]} ---") # Línea 362: Título.
+    
+    # 1. Crear la huella digital para buscar/crear el registro.
+    registro_id = id_manager.generar_id_registro((user_id, estudiante_id, periodo, asignatura_clave)) # Línea 365: Genera el ID único del registro.
+    
+    # 2. Buscar si el registro ya existe.
+    filtro_existente = (df['ID_REGISTRO'] == registro_id) # Línea 368: Filtro para buscar la fila con ese ID único.
+    
+    if df[filtro_existente].empty:           # Línea 370: Si el DataFrame filtrado está vacío (el registro es NUEVO)...
+        print("Creando nuevo registro...")    # Línea 371: Mensaje.
+        # Crear un nuevo registro con valores por defecto.
+        nuevo_registro = {                   # Línea 373: Diccionario para la nueva fila.
+            'ID_REGISTRO': registro_id,      # Línea 374: El ID único.
+            'profesor_ID': user_id,          # Línea 375: La ID del profesor actual.
+            'estudiante_ID': estudiante_id,  # Línea 376: La ID del estudiante.
+            'periodo': periodo,              # Línea 377: El periodo.
+            'asignatura': asignatura_clave,  # Línea 378: La clave de la asignatura.
+            'fecha_ingreso': str(date.today()), # Línea 379: La fecha de hoy.
+            'estado_publicacion': False,     # Línea 380: Por defecto, no publicado.
+            'estado_revision': False,        # Línea 381: Por defecto, sin revisión pendiente.
+            'P_DETALLES_JSON': json.dumps({}) # Línea 382: JSON vacío para los detalles.
+        }                                    # Línea 383: Fin del diccionario.
+        # Rellenar los campos de notas con "N/A".
+        for campo in CALIFICACION_CAMPOS:    # Línea 385: Bucle para rellenar las notas.
+            nuevo_registro[campo] = ESTADO_INICIAL_NOTA # Línea 386: Asigna "N/A" a cada campo de nota.
+        
+        df_temp = pd.DataFrame([nuevo_registro]) # Línea 388: Crea una tabla temporal con la nueva fila.
+        df = pd.concat([df, df_temp], ignore_index=True) # Línea 389: Agrega la nueva fila a la tabla principal.
+        
+        # Necesitamos volver a aplicar el filtro para obtener el índice de la nueva fila.
+        filtro_existente = (df['ID_REGISTRO'] == registro_id) # Línea 392: Re-aplica el filtro.
+
+    # 3. Obtener el índice (número de fila) del registro a modificar.
+    index_to_update = df[filtro_existente].index[0] # Línea 395: Obtiene el número de fila (índice) donde está el registro.
+    
+    # 4. Cargar los detalles JSON (por si hay notas parciales guardadas)
+    detalles_json = df.loc[index_to_update, 'P_DETALLES_JSON'] # Línea 398: Lee el campo JSON de la fila.
+    try:                                             # Línea 399: Intenta decodificar el JSON.
+        detalles_previos = json.loads(detalles_json) # Línea 400: Convierte el texto JSON a un diccionario.
+    except (json.JSONDecodeError, TypeError):        # Línea 401: Si falla la decodificación...
+        detalles_previos = {}                        # Línea 402: Usa un diccionario vacío.
+
+    # 5. Pedir y validar cada nota parcial.
+    print("\nIngrese las notas (0-100). Escriba 'N/A' si aún no aplica:") # Línea 405: Instrucción.
+    notas_ingresadas = {}                            # Línea 406: Diccionario para guardar las notas que se van a ingresar.
+    
+    for campo in CALIFICACION_CAMPOS:                # Línea 408: Bucle que recorre Participación, Proyecto, Tarea, Examen.
+        nota_previa = df.loc[index_to_update, campo] # Línea 409: Lee el valor de la nota que ya está guardada.
+        prompt = f"  {campo.replace('P_', '')} (Peso: {PESOS_CALIFICACION[campo]*100}% - Actual: {nota_previa}): " # Línea 410: Crea el mensaje para el input.
+        
+        nueva_nota = obtener_input_numerico(prompt, 0, 100) # Línea 412: Llama a la función de validación numérica.
+        notas_ingresadas[campo] = nueva_nota         # Línea 413: Guarda la nota en el diccionario.
+        
+        # 6. Actualizar el DataFrame con la nueva nota.
+        df.loc[index_to_update, campo] = nueva_nota  # Línea 416: Escribe la nueva nota en la fila y columna correcta.
+
+    # 7. Recalcular la nota final.
+    # Solo calcula si se han ingresado todos los campos (o son números válidos).
+    notas_a_calcular = {k: v for k, v in notas_ingresadas.items() if isinstance(v, (int, float))} # Línea 420: Crea un diccionario solo con las notas que son números.
+    
+    if len(notas_a_calcular) == len(CALIFICACION_CAMPOS): # Línea 422: Si se ingresaron números en TODAS las categorías...
+        nota_final = calcular_nota_final(notas_a_calcular) # Línea 423: Llama a la función para calcular el promedio ponderado.
+        letra_final = convertir_a_letra(nota_final)  # Línea 424: Llama a la función para convertir el número a letra.
+        
+        # 8. Actualizar las columnas de Nota Final.
+        df.loc[index_to_update, 'P_NOTA_FINAL'] = nota_final # Línea 427: Guarda la nota numérica final.
+        df.loc[index_to_update, 'P_LETRA_FINAL'] = letra_final # Línea 428: Guarda la nota en letra final.
+        print(f"\n✅ NOTA FINAL CALCULADA: {nota_final} ({letra_final})") # Línea 429: Mensaje de éxito.
+        
+        # Si se calculó, es una modificación mayor, por lo que se marca como no publicado.
+        df.loc[index_to_update, 'estado_publicacion'] = False # Línea 432: Marca el registro como NO publicado (requiere republicación).
+    
+    else:                                            # Línea 434: Si falta alguna nota por ingresar...
+        df.loc[index_to_update, 'P_NOTA_FINAL'] = ESTADO_INICIAL_NOTA # Línea 435: Deja la nota final como "N/A".
+        df.loc[index_to_update, 'P_LETRA_FINAL'] = ESTADO_INICIAL_NOTA # Línea 436: Deja la letra final como "N/A".
+        print("\n⏳ NOTA FINAL PENDIENTE: Faltan campos por completar.") # Línea 437: Mensaje de nota pendiente.
+        
+    df.loc[index_to_update, 'fecha_ingreso'] = str(date.today()) # Línea 439: Actualiza la fecha de la última modificación.
+    guardar_datos(df)                                # Línea 440: Llama a la función para guardar todos los cambios al CSV.
+    return df                                        # Línea 441: Devuelve el DataFrame actualizado.
+
+def menu_profesor_llenado_notas(df, user_id, periodo='P1'): # Línea 443: Sub-menú para que el profesor llene notas.
+    """Menú para que el profesor seleccione el estudiante y asignatura a calificar.""" # Línea 444: Docstring.
+    asignaturas_profesor = ASIGNACION_PROFESOR.get(user_id, []) # Línea 445: Obtiene la lista de asignaturas del profesor.
+    
+    if not asignaturas_profesor:             # Línea 447: Si la lista está vacía...
+        print("Usted no tiene asignaturas asignadas para calificar.") # Línea 448: Mensaje.
+        input("Presione Enter para continuar...") # Línea 449: Pausa.
+        return df                            # Línea 450: Termina la función.
+        
+    estudiantes_ids = [k for k, v in USUARIOS_MOCK.items() if v == ROLES['ESTUDIANTE']] # Línea 452: Lista de IDs de estudiantes.
+    
+    while True:                              # Línea 454: Bucle principal del sub-menú.
+        print("\n--- INGRESO DE NOTAS ---") # Línea 455: Título.
+        print(f"Profesor ID: {user_id}. Periodo: {periodo}.") # Línea 456: Info.
+        print("-" * 30)                      # Línea 457: Separador.
+        
+        # Paso 1: Seleccionar Estudiante
+        print("Estudiantes disponibles:")     # Línea 460: Lista de estudiantes.
+        for i, est_id in enumerate(estudiantes_ids): # Línea 461: Bucle para mostrar la lista.
+            print(f"  {i+1}. ID: {est_id}")  # Línea 462: Muestra el índice (1, 2, 3...) y la ID del estudiante.
+            
+        est_idx_str = input("Seleccione el número del estudiante (o '0' para volver): ").strip() # Línea 464: Pide la selección.
+        if est_idx_str == '0':               # Línea 465: Si escribe '0'...
+            return df                        # Línea 466: Vuelve al menú anterior.
+            
+        try:                                 # Línea 468: Intenta convertir a número.
+            est_idx = int(est_idx_str) - 1   # Línea 469: Convierte a número y resta 1 (para usar como índice de lista).
+            estudiante_id = estudiantes_ids[est_idx] # Línea 470: Obtiene la ID del estudiante seleccionado.
+        except (ValueError, IndexError):     # Línea 471: Si la conversión o el índice es incorrecto...
+            print("Selección no válida. Intente de nuevo.") # Línea 472: Mensaje de error.
+            continue                         # Línea 473: Vuelve al inicio del bucle.
+            
+        # Paso 2: Seleccionar Asignatura
+        print("\nAsignaturas a calificar:")  # Línea 476: Título.
+        for i, asig_clave in enumerate(asignaturas_profesor): # Línea 477: Bucle para mostrar las asignaturas del profesor.
+            print(f"  {i+1}. {ASIGNATURAS_MOCK[asig_clave]} ({asig_clave})") # Línea 478: Muestra el nombre y la clave.
+            
+        asig_idx_str = input("Seleccione el número de la asignatura (o '0' para volver): ").strip() # Línea 480: Pide la selección.
+        if asig_idx_str == '0':              # Línea 481: Si escribe '0'...
+            continue                         # Línea 482: Vuelve al paso 1 (selección de estudiante).
+            
+        try:                                 # Línea 484: Intenta convertir a número.
+            asig_idx = int(asig_idx_str) - 1 # Línea 485: Convierte a número y resta 1.
+            asignatura_clave = asignaturas_profesor[asig_idx] # Línea 486: Obtiene la clave de la asignatura.
+        except (ValueError, IndexError):     # Línea 487: Si la conversión o el índice es incorrecto...
+            print("Selección no válida. Intente de nuevo.") # Línea 488: Mensaje de error.
+            continue                         # Línea 489: Vuelve al inicio del bucle.
+            
+        # Paso 3: Llenar las notas para la selección.
+        df = llenar_nota_registro(df, user_id, estudiante_id, asignatura_clave, periodo) # Línea 492: Llama a la función que pide las notas.
+
+def menu_profesor_publicacion(df, user_id, periodo='P1'): # Línea 494: Sub-menú para publicar notas.
+    """Menú para que el profesor publique las notas de sus asignaturas.""" # Línea 495: Docstring.
+    if not verificar_permiso(user_id, 'publicar_notas'): # Línea 496: Verifica el permiso.
+        print("Permiso denegado.")            # Línea 497: Mensaje.
+        return df                            # Línea 498: Termina.
+
+    print("\n--- PUBLICACIÓN DE CALIFICACIONES ---") # Línea 500: Título.
+    
+    # Filtro para encontrar notas calculadas, no publicadas y que pertenecen a este profesor.
+    filtro_pub = (df['profesor_ID'] == user_id) & \
+                 (df['estado_publicacion'] == False) & \
+                 (df['periodo'] == periodo) & \
+                 (df['P_NOTA_FINAL'] != ESTADO_INICIAL_NOTA) # Línea 505: Filtro de 4 condiciones.
+                 
+    pendientes_pub = df[filtro_pub]          # Línea 507: Aplica el filtro.
+    
+    if pendientes_pub.empty:                 # Línea 509: Si no hay notas para publicar...
+        print(f"No hay notas completas y no publicadas en el Periodo {periodo}.") # Línea 510: Mensaje.
+        input("Presione Enter para continuar...") # Línea 511: Pausa.
+        return df                            # Línea 512: Termina.
+        
+    print(f"Se encontraron {len(pendientes_pub)} registros listos para publicación:") # Línea 514: Mensaje con el conteo.
+    # Mostrar solo la información clave.
+    print(pendientes_pub[['estudiante_ID', 'asignatura', 'P_NOTA_FINAL']].to_string(index=False)) # Línea 516: Muestra la lista de notas a publicar.
+
+    confirm = input("¿Desea PUBLICAR todas estas notas? (S/N): ").strip().upper() # Línea 518: Pide confirmación.
+    
+    if confirm == 'S':                       # Línea 520: Si la respuesta es 'S'...
+        # Establece el estado_publicacion a True para todas las filas que cumplen el filtro.
+        df.loc[filtro_pub, 'estado_publicacion'] = True # Línea 522: Actualiza la columna 'estado_publicacion' a True.
+        guardar_datos(df)                    # Línea 523: Guarda los cambios.
+        print("\n✅ Publicación completada. Los estudiantes ya pueden ver estas notas.") # Línea 524: Mensaje de éxito.
+    else:                                    # Línea 525: Si la respuesta es 'N'...
+        print("Publicación cancelada.")      # Línea 526: Mensaje.
+        
+    input("Presione Enter para continuar...") # Línea 528: Pausa.
+    return df                                # Línea 529: Devuelve el DataFrame.
+
+def menu_estudiante_revision(df, user_id, periodo='P1'): # Línea 531: Sub-menú para que el estudiante solicite revisión.
+    """Permite al estudiante solicitar la revisión de una nota publicada.""" # Línea 532: Docstring.
+    if not verificar_permiso(user_id, 'solicitar_revision'): # Línea 533: Verifica el permiso.
+        print("Permiso denegado.")            # Línea 534: Mensaje.
+        return df                            # Línea 535: Termina.
+        
+    print("\n--- SOLICITUD DE REVISIÓN ---") # Línea 537: Título.
+    
+    # 1. Filtrar las notas publicadas del estudiante.
+    filtro_est_pub = (df['estudiante_ID'] == user_id) & (df['estado_publicacion'] == True) # Línea 540: Filtro: notas publicadas Y que pertenecen al estudiante.
+    registros_disponibles = df[filtro_est_pub].copy() # Línea 541: Copia de las notas disponibles (para mostrar).
+    
+    if registros_disponibles.empty:          # Línea 543: Si no hay notas publicadas...
+        print("No tiene notas publicadas para solicitar revisión.") # Línea 544: Mensaje.
+        input("Presione Enter para continuar...") # Línea 545: Pausa.
+        return df                            # Línea 546: Termina.
+        
+    # 2. Mostrar las notas que se pueden revisar.
+    registros_disponibles['indice'] = range(1, len(registros_disponibles) + 1) # Línea 549: Agrega una columna temporal para enumerar las opciones (1, 2, 3...).
+    
+    print("\nNotas disponibles para revisión:") # Línea 551: Título.
+    print(registros_disponibles[['indice', 'asignatura', 'P_LETRA_FINAL', 'fecha_ingreso', 'estado_revision']].to_string(index=False)) # Línea 553: Muestra las notas clave.
+
+    while True:                              # Línea 555: Bucle para pedir la selección.
+        opcion_str = input("Seleccione el número de la nota a revisar (o '0' para volver): ").strip() # Línea 556: Pide la selección.
+        if opcion_str == '0':                # Línea 557: Si elige '0'...
+            return df                        # Línea 558: Termina.
+            
+        try:                                 # Línea 560: Intenta convertir a número.
+            opcion = int(opcion_str)         # Línea 561: Convierte a número.
+            registro_selec = registros_disponibles[registros_disponibles['indice'] == opcion].iloc[0] # Línea 562: Obtiene la fila seleccionada.
+            index_to_update = registro_selec.name # Línea 563: Obtiene el índice (número de fila real) en el DataFrame principal.
+        except (ValueError, IndexError):     # Línea 564: Si la selección es incorrecta...
+            print("Selección no válida.")    # Línea 565: Mensaje.
+            continue                         # Línea 566: Vuelve al inicio del bucle.
+            
+        # 3. Verificar el plazo de revisión (simulación).
+        fecha_ingreso = datetime.strptime(registro_selec['fecha_ingreso'], '%Y-%m-%d').date() # Línea 569: Convierte la fecha de ingreso a un objeto de fecha.
+        plazo_limite = fecha_ingreso + timedelta(days=PLAZO_REVISION_DIAS) # Línea 570: Calcula la fecha límite (fecha de ingreso + 5 días).
+        
+        if date.today() > plazo_limite:      # Línea 572: Si la fecha de hoy es posterior a la fecha límite...
+            print(f"❌ Plazo vencido. El límite era hasta el {plazo_limite}.") # Línea 573: Mensaje de error de plazo.
+            continue                         # Línea 574: Vuelve al inicio del bucle.
+
+        # 4. Actualizar el estado de revisión.
+        if registro_selec['estado_revision'] == True: # Línea 577: Si ya está en revisión...
+            print("Ya existe una solicitud de revisión pendiente para esta nota.") # Línea 578: Mensaje.
+            continue                         # Línea 579: Vuelve al inicio del bucle.
+            
+        df.loc[index_to_update, 'estado_revision'] = True # Línea 581: Marca el campo 'estado_revision' a True.
+        guardar_datos(df)                    # Línea 582: Guarda los cambios.
+        
+        profesor_id = registro_selec['profesor_ID'] # Línea 584: Obtiene la ID del profesor.
+        print(f"\n✅ Solicitud de revisión enviada exitosamente al profesor ID {profesor_id}.") # Línea 585: Mensaje de éxito.
+        
+        input("Presione Enter para continuar...") # Línea 587: Pausa.
+        return df                            # Línea 588: Termina la función.
+
+def menu_profesor_revision_pendiente(df, user_id, periodo='P1'): # Línea 590: Sub-menú para que el profesor revise solicitudes.
+    """Permite al profesor gestionar las solicitudes de revisión pendientes.""" # Línea 591: Docstring.
+    if not verificar_permiso(user_id, 'ver_registro'): # Línea 592: Verifica el permiso.
+        print("Permiso denegado.")            # Línea 593: Mensaje.
+        return df                            # Línea 594: Termina.
+        
+    print("\n--- GESTIÓN DE REVISIONES PENDIENTES ---") # Línea 596: Título.
+    
+    # 1. Filtrar solicitudes de revisión para este profesor.
+    filtro_rev = (df['profesor_ID'] == user_id) & (df['estado_revision'] == True) # Línea 599: Filtro: notas del profesor Y con estado_revision = True.
+    solicitudes = df[filtro_rev].copy()      # Línea 600: Copia de las solicitudes.
+    
+    if solicitudes.empty:                    # Línea 602: Si no hay solicitudes...
+        print("No tiene solicitudes de revisión pendientes.") # Línea 603: Mensaje.
+        input("Presione Enter para continuar...") # Línea 604: Pausa.
+        return df                            # Línea 605: Termina.
+        
+    # 2. Mostrar las solicitudes.
+    solicitudes['indice'] = range(1, len(solicitudes) + 1) # Línea 608: Agrega columna temporal para enumerar.
+    
+    print("\nSolicitudes pendientes:")       # Línea 610: Título.
+    print(solicitudes[['indice', 'estudiante_ID', 'asignatura', 'P_NOTA_FINAL', 'P_LETRA_FINAL']].to_string(index=False)) # Línea 612: Muestra las solicitudes.
+    
+    while True:                              # Línea 614: Bucle para pedir la selección.
+        opcion_str = input("Seleccione el número de la solicitud a gestionar (o '0' para volver): ").strip() # Línea 615: Pide la selección.
+        if opcion_str == '0':                # Línea 616: Si elige '0'...
+            return df                        # Línea 617: Termina.
+            
+        try:                                 # Línea 619: Intenta convertir a número.
+            opcion = int(opcion_str)         # Línea 620: Convierte a número.
+            solicitud_selec = solicitudes[solicitudes['indice'] == opcion].iloc[0] # Línea 621: Obtiene la fila.
+            index_to_update = solicitud_selec.name # Línea 622: Obtiene el índice real.
+        except (ValueError, IndexError):     # Línea 623: Si la selección es incorrecta...
+            print("Selección no válida.")    # Línea 624: Mensaje.
+            continue                         # Línea 625: Vuelve al inicio del bucle.
+            
+        print("\n--- GESTIONANDO SOLICITUD ---") # Línea 627: Título.
+        print(f"Estudiante: {solicitud_selec['estudiante_ID']}, Asignatura: {ASIGNATURAS_MOCK[solicitud_selec['asignatura']]}") # Línea 628: Info.
+        
+        # Opciones de gestión
+        print("\nOpciones:")                  # Línea 631: Opciones.
+        print("1. Revisar (ir al menú de llenado de notas para modificar la nota)") # Línea 632: Opción 1.
+        print("2. Marcar como Revisada (Aceptar nota y borrar solicitud)") # Línea 633: Opción 2.
+        
+        gestion_opc = input("Seleccione una opción: ").strip() # Línea 635: Pide la opción.
+
+        if gestion_opc == '1':               # Línea 637: Si elige '1' (Revisar)...
+            # Redirigir al menú de llenado, lo que le permite al profesor cambiar las notas.
+            df = llenar_nota_registro(df, user_id, solicitud_selec['estudiante_ID'], solicitud_selec['asignatura'], periodo) # Línea 640: Llama a la función de llenado de notas.
+            # Al modificar, se asume que la revisión fue atendida.
+            df.loc[index_to_update, 'estado_revision'] = False # Línea 642: Desactiva el estado de revisión.
+            guardar_datos(df)                # Línea 643: Guarda.
+            print("\n✅ Nota revisada y solicitud cerrada.") # Línea 644: Mensaje.
+            
+        elif gestion_opc == '2':             # Línea 646: Si elige '2' (Marcar como Revisada)...
+            df.loc[index_to_update, 'estado_revision'] = False # Línea 647: Desactiva el estado de revisión.
+            guardar_datos(df)                # Línea 648: Guarda.
+            print("\n✅ Solicitud de revisión cerrada sin modificaciones.") # Línea 649: Mensaje.
+            
+        else:                                # Línea 651: Si elige otra opción...
+            print("Opción no válida.")       # Línea 652: Mensaje.
+
+        # Actualizar la lista de solicitudes y volver al inicio del bucle.
+        filtro_rev = (df['profesor_ID'] == user_id) & (df['estado_revision'] == True) # Línea 656: Re-aplica el filtro.
+        solicitudes = df[filtro_rev].copy()      # Línea 657: Actualiza la lista.
+        if solicitudes.empty: break # Línea 658: Si ya no hay solicitudes, sale del bucle.
+        
+        input("Presione Enter para continuar...") # Línea 660: Pausa.
+
+def flujo_director(df, user_id, periodo='P1'): # Línea 662: Función de flujo para el Director.
+    """Menú principal para el rol de Director/a.""" # Línea 663: Docstring.
+    while True:                                  # Línea 664: Bucle principal del menú.
+        print("\n" + "#"*40)                     # Línea 665: Separador.
+        print("--- MENÚ DIRECTOR --- (ID: 0)") # Línea 666: Título.
+        check_alerts(df, user_id)                # Línea 667: Llama a las alertas.
+        print("1. Llenar/Modificar Notas (Acceso total)") # Línea 668: Opción 1.
+        print("2. Publicar Notas (Acceso total)") # Línea 669: Opción 2.
+        print("3. Ver Registro de Calificaciones (Acceso total)") # Línea 670: Opción 3.
+        print("4. Cerrar Sesión")                # Línea 671: Opción 4.
+        
+        opc = input("Seleccione una opción: ").strip() # Línea 673: Pide la opción.
+        
+        if opc == '1':                           # Línea 675: Si elige 1...
+            # El director usa el mismo menú que el profesor para llenar, pero tiene acceso a todas las asignaturas/profesores (simulación simplificada).
+            df = menu_profesor_llenado_notas(df, user_id, periodo) # Línea 678: Llama a la función de llenado.
+        elif opc == '2':                         # Línea 679: Si elige 2...
+            # El director publica todas las notas del periodo, independientemente del profesor.
+            # Simulación: Publicar todas las notas no publicadas con nota final.
+            filtro_all_pub = (df['estado_publicacion'] == False) & \
+                             (df['periodo'] == periodo) & \
+                             (df['P_NOTA_FINAL'] != ESTADO_INICIAL_NOTA) # Línea 684: Filtro para todas las notas listas.
+            
+            if df[filtro_all_pub].empty:         # Línea 686: Si no hay notas...
+                print("No hay notas completas y no publicadas en el Periodo para el Director.") # Línea 687: Mensaje.
+            else:                                # Línea 688: Si hay notas...
+                confirm = input(f"Se publicarán {len(df[filtro_all_pub])} registros. ¿Confirmar? (S/N): ").strip().upper() # Línea 690: Pide confirmación.
+                if confirm == 'S':               # Línea 691: Si confirma...
+                    df.loc[filtro_all_pub, 'estado_publicacion'] = True # Línea 692: Publica.
+                    guardar_datos(df)            # Línea 693: Guarda.
+                    print("✅ Publicación general completada.") # Línea 694: Mensaje.
+                else:                            # Línea 695: Si cancela...
+                    print("Publicación cancelada.") # Línea 696: Mensaje.
+                    
+        elif opc == '3':                         # Línea 698: Si elige 3...
+            mostrar_registro_usuario(df, user_id, ROLES['DIRECTOR']) # Línea 699: Muestra el registro completo.
+        elif opc == '4':                         # Línea 700: Si elige 4...
+            break                                # Línea 701: Sale del bucle (Cerrar Sesión).
+        else:                                    # Línea 702: Si elige otra opción...
+            print("Opción no válida. Intente de nuevo.") # Línea 703: Mensaje.
+            
+    return df                                    # Línea 705: Devuelve el DataFrame.
+
+def flujo_profesor(df, user_id, periodo='P1'): # Línea 707: Función de flujo para el Profesor.
+    """Menú principal para el rol de Profesor/a.""" # Línea 708: Docstring.
+    while True:                                  # Línea 709: Bucle principal del menú.
+        print("\n" + "#"*40)                     # Línea 710: Separador.
+        print(f"--- MENÚ PROFESOR --- (ID: {user_id})") # Línea 711: Título.
+        check_alerts(df, user_id)                # Línea 712: Llama a las alertas.
+        print("1. Llenar/Modificar Notas")       # Línea 713: Opción 1.
+        print("2. Publicar Notas")               # Línea 714: Opción 2.
+        print("3. Gestionar Solicitudes de Revisión") # Línea 715: Opción 3.
+        print("4. Ver Mis Registros")            # Línea 716: Opción 4.
+        print("5. Cerrar Sesión")                # Línea 717: Opción 5.
+        
+        opc = input("Seleccione una opción: ").strip() # Línea 719: Pide la opción.
+        
+        if opc == '1':                           # Línea 721: Si elige 1...
+            df = menu_profesor_llenado_notas(df, user_id, periodo) # Línea 722: Llama a la función de llenado.
+        elif opc == '2':                         # Línea 723: Si elige 2...
+            df = menu_profesor_publicacion(df, user_id, periodo) # Línea 724: Llama a la función de publicación.
+        elif opc == '3':                         # Línea 725: Si elige 3...
+            df = menu_profesor_revision_pendiente(df, user_id, periodo) # Línea 726: Llama a la función de revisión.
+        elif opc == '4':                         # Línea 727: Si elige 4...
+            mostrar_registro_usuario(df, user_id, ROLES['PROFESOR']) # Línea 728: Muestra sus registros.
+        elif opc == '5':                         # Línea 729: Si elige 5...
+            break                                # Línea 730: Sale del bucle.
+        else:                                    # Línea 731: Si elige otra opción...
+            print("Opción no válida. Intente de nuevo.") # Línea 732: Mensaje.
+            
+    return df                                    # Línea 734: Devuelve el DataFrame.
+
+def flujo_estudiante(df, user_id, periodo='P1'): # Línea 736: Función de flujo para el Estudiante.
+    """Menú principal para el rol de Estudiante.""" # Línea 737: Docstring.
+    while True:                                  # Línea 738: Bucle principal del menú.
+        print("\n" + "#"*40)                     # Línea 739: Separador.
+        print(f"--- MENÚ ESTUDIANTE --- (ID: {user_id})") # Línea 740: Título.
+        check_alerts(df, user_id)                # Línea 741: Llama a las alertas.
+        print("1. Ver Mis Calificaciones Publicadas") # Línea 742: Opción 1.
+        print("2. Solicitar Revisión de Nota")   # Línea 743: Opción 2.
+        print("3. Cerrar Sesión")                # Línea 744: Opción 3.
+        
+        opc = input("Seleccione una opción: ").strip() # Línea 746: Pide la opción.
+        
+        if opc == '1':                           # Línea 748: Si elige 1...
+            mostrar_registro_usuario(df, user_id, ROLES['ESTUDIANTE']) # Línea 749: Muestra sus notas.
+        elif opc == '2':                         # Línea 750: Si elige 2...
+            df = menu_estudiante_revision(df, user_id, periodo) # Línea 751: Llama a la función de solicitud de revisión.
+        elif opc == '3':                         # Línea 752: Si elige 3...
+            break                                # Línea 753: Sale del bucle.
+        else:                                    # Línea 754: Si elige otra opción...
+            print("Opción no válida. Intente de nuevo.") # Línea 755: Mensaje.
+            
+    return df                                    # Línea 757: Devuelve el DataFrame.
+
+def menu_login():                                # Línea 759: Función de inicio de sesión.
+    """Maneja el inicio de sesión y la selección de rol.""" # Línea 760: Docstring.
+    while True:                                  # Línea 761: Bucle de inicio de sesión.
+        print("\n" + "="*50)                     # Línea 762: Separador.
+        print("--- SISTEMA DE REGISTRO DE CALIFICACIONES MINERD ---") # Línea 763: Título.
+        print("="*50)                            # Línea 764: Separador.
+        print("IDs de prueba: 0 (Director), 1001/1002 (Profesor), 2001-2003 (Estudiante)") # Línea 765: IDs de prueba.
+        user_id = input("Ingrese su ID de usuario (o 'SALIR'): ").strip() # Línea 766: Pide la ID.
+        
+        if user_id.upper() == 'SALIR':           # Línea 768: Si escribe 'SALIR'...
+            print("\nGuardando datos finales y saliendo...") # Línea 769: Mensaje de cierre.
+            time.sleep(1.5)                      # Línea 770: Pausa.
+            return None, None                    # Línea 771: Devuelve None para cerrar.
+            
+        rol = USUARIOS_MOCK.get(user_id)         # Línea 773: Busca el rol.
+        
+        if rol:                                  # Línea 775: Si encontró un rol (ID válida)...
+            print(f"\n✅ Sesión iniciada como {rol} (ID: {user_id}).") # Línea 776: Mensaje de éxito.
+            return user_id, rol                  # Línea 777: Devuelve la ID y el rol.
+        else:                                    # Línea 778: Si no encontró rol...
+            print("ID de usuario no válida. Intente de nuevo.") # Línea 779: Mensaje de error.
+
+# Variable global para contener el DataFrame (la tabla de datos) en todo el programa.
+flujo_global_df = pd.DataFrame(columns=COLUMNS) # Línea 782: Crea la tabla global (se llenará en main).
+
+def main():                                      # Línea 784: Función principal de orquestación.
+    """Función principal que inicia la aplicación y gestiona el flujo.""" # Línea 785: Docstring.
+    global flujo_global_df                       # Línea 786: Declara que usará la variable global de la línea 782.
+    
+    # --- 1. Inicialización ---
+    inicializar_csv()                            # Línea 789: Asegura que el archivo CSV y la ID existen.
+    flujo_global_df = cargar_datos()             # Línea 790: Carga los datos del CSV a la tabla global.
+    
+    print("\nSistema iniciado. Total de registros cargados:", len(flujo_global_df)) # Línea 792: Mensaje de inicio.
+    
+    # --- 2. Bucle de la Aplicación (Múltiples Sesiones) ---
+    while True:                                  # Línea 795: Bucle que mantiene el programa vivo (mientras el usuario no diga 'SALIR').
+        try:                                     # Línea 796: Intenta el siguiente bloque de código.
+            user_id, rol = menu_login()          # Línea 797: Llama al inicio de sesión.
+            
+            if user_id is None:                  # Línea 799: Si el inicio de sesión devolvió None (el usuario eligió SALIR)...
+                break                            # Línea 800: Rompe el bucle y termina el programa.
+                
+            # --- 3. Redirección de Flujo ---
+            if rol == ROLES['DIRECTOR']:         # Línea 803: Si es Director...
+                flujo_global_df = flujo_director(flujo_global_df, user_id) # Línea 804: Llama al menú del Director.
+            elif rol == ROLES['PROFESOR']:       # Línea 805: Si es Profesor...
+                flujo_global_df = flujo_profesor(flujo_global_df, user_id) # Línea 806: Llama al menú del Profesor.
+            elif rol == ROLES['ESTUDIANTE']:     # Línea 807: Si es Estudiante...
+                flujo_global_df = flujo_estudiante(flujo_global_df, user_id) # Línea 808: Llama al menú del Estudiante.
+            
+            # 4. Después de cada sesión (break en el menú), el bucle vuelve a pedir login.
+            
+        except KeyboardInterrupt:                # Línea 812: Captura si el usuario presiona Ctrl+C.
+            print("\nInterrupción detectada. Guardando datos y saliendo...") # Línea 813: Mensaje.
+            guardar_datos(flujo_global_df)       # Línea 814: Guarda los datos antes de salir.
+            break                                # Línea 815: Rompe el bucle.
+            
+        except Exception as e:                   # Línea 817: Captura cualquier otro error no esperado.
+            print(f"\nOcurrió un error inesperado en el sistema: {e}") # Línea 818: Imprime el error.
+            print("Se ha cerrado la sesión para evitar problemas.") # Línea 819: Mensaje de seguridad.
+            # Se permite que el bucle continúe para que el usuario pueda intentar un nuevo login.
+            
+    # --- 5. Cierre Final ---
+    print("\nPrograma terminado.")               # Línea 823: Mensaje de fin.
+
+if __name__ == "__main__":                       # Línea 825: Condición que se cumple solo si el archivo se ejecuta directamente.
+    # Esta es la línea de código que inicia todo el proceso.
+    main()                                       # Línea 827: Llama a la función principal 'main()' para empezar.
+# Fin del archivo. Total de líneas: 830.
